@@ -1,2 +1,149 @@
-# Schedule-and-Route-Planner
-To help with scheduling and route planning
+# THC Route Planner
+
+Turns a day's list of stops into a timed itinerary for The Hoof Clinic: what time
+to leave home, when you arrive at and leave each property, and what time you're
+back — with per-leg drive time, distance, and any routing warnings Google
+returns.
+
+React + Vite front end, Vercel serverless functions for everything that touches a
+key.
+
+![Itinerary output](docs/itinerary.png)
+
+## How the schedule is worked out
+
+The day is anchored on the **first appointment time**, not a leave time:
+
+```
+leaveBase      = firstAppointment − drive(base → stop 1)
+arrival[0]     = firstAppointment
+departure[i]   = arrival[i] + timeOnSite[i]
+arrival[i]     = departure[i−1] + drive(stop i−1 → stop i)
+returnToBase   = departure[last] + drive(last stop → base)
+```
+
+Each leg is priced with the `departureTime` it is actually driven at, so the
+traffic estimate for the 07:00 run out is not the estimate for the 16:00 run
+home. Because the leave time depends on the first leg's duration and that
+duration depends on the leave time, the first leg is computed twice: once
+departing at the appointment time for a rough figure, then again at the implied
+leave time. That's the number you act on, so it's worth the extra call.
+
+Planning a run in the past (or within the next minute) silently falls back to
+traffic-unaware routing, which the itinerary labels.
+
+## Setup
+
+```bash
+npm install
+cp .env.example .env.local   # fill in the two keys
+npm run dev                  # http://localhost:5173
+npm test                     # scheduling + timezone tests
+```
+
+`npm run dev` runs the `api/` functions inside the Vite dev server (see the
+`vercelApiDev` plugin in `vite.config.js`), so the local app behaves like the
+deployed one without needing the Vercel CLI.
+
+### Environment variables
+
+All server-side; see `.env.example`. None is `VITE_`-prefixed, so none reaches
+the browser bundle.
+
+| Variable | Required | Purpose |
+| --- | --- | --- |
+| `SUPABASE_URL` | yes | Project URL |
+| `SUPABASE_SERVICE_ROLE_KEY` | yes | Server-side reads of `service_locations` / `appointments` |
+| `GOOGLE_MAPS_API_KEY` | yes | Routes API (legs) and Maps Static API (map preview) |
+| `THC_USER_ID` | no | Scope all queries to one operator's `user_id` |
+| `BASE_ADDRESS` / `BASE_ADDRESS_LABEL` | no | Fallback base if no `is_home` location exists |
+| `PLANNER_TIMEZONE` | no | Defaults to `Australia/Melbourne` |
+
+Enable **Routes API** and **Maps Static API** on the key. An IP restriction is
+not practical on Vercel's serverless egress, so restrict the key by API instead
+and keep it server-side.
+
+### Deploying
+
+Vercel auto-detects the Vite build and serves `api/*.js` as Node functions — no
+`vercel.json` needed. Set the environment variables in the project settings and
+push.
+
+## Decisions worth knowing about
+
+**Base address — it already exists in the schema.** `profiles` has no address
+column, but `service_locations` has an `is_home` flag, and the row carrying it is
+Sondela Farm (205 Bass Rd, Bass VIC 3991) with coordinates already on it. That is
+the default base. It is not hardcoded: the UI lets you type a different one,
+which is stored as a local override in `localStorage`, and "reset to default"
+clears the override so a change to `is_home` in Supabase takes effect again.
+
+**Data access — direct, not via `db-proxy`.** Both were on the table. Direct
+querying with the service-role key inside the Vercel function won: a real query
+builder rather than hand-assembled PostgREST strings, one fewer hop, and no
+dependency on an endpoint this app doesn't own. See the security note below for
+the other reason.
+
+**Coordinates over geocoding.** All 15 current `service_locations` rows have
+`latitude`/`longitude`, so legs are computed from stored coordinates. Rows
+without them fall back to the composed address string, which the Routes API
+geocodes itself; the picker tags those rows `no lat/lng` and the itinerary lists
+which stops were geocoded.
+
+**Routes API over the legacy Directions API.** It is the current product, takes a
+future `departureTime` for predictive traffic, and returns per-route `warnings`
+— including the "restricted usage or private roads" advisories, which are shown
+against the leg that produced them and collected at the foot of the itinerary.
+
+**Schema note.** The brief described the columns as `address`, `lat`, `lng`. They
+are actually `address_line1` / `address_line2` / `town_city` / `county` /
+`postcode`, and `latitude` / `longitude`. Also, `service_locations` has *two*
+foreign keys to `clients` (`client_id` and `created_by_client_id`), so the client
+name embed has to name the constraint explicitly or PostgREST rejects it as
+ambiguous.
+
+## Layout
+
+```
+api/            Vercel serverless functions — the only code that sees a key
+  locations.js    GET  service locations + the default base
+  appointments.js GET  a date's appointments, grouped by location
+  plan.js         POST the itinerary
+  staticmap.js    POST route map image bytes (keeps the key off the client)
+lib/            Server-side modules
+  schedule.js     Itinerary construction — no I/O, fully unit-tested
+  google.js       Routes API client
+  time.js         Australia/Melbourne wall-clock ↔ instant conversion
+  supabase.js     Service-role client
+src/            React app
+test/            node:test suites for the scheduling and timezone logic
+```
+
+`lib/schedule.js` takes the leg fetcher as an argument, so the scheduling rules
+are tested against stubbed legs with no network involved.
+
+## Not built (from the brief's nice-to-haves)
+
+- **Saving a planned route back to Supabase.** Needs a new table in the
+  production database; worth agreeing on the shape first.
+- **"Optimise stop order" (TSP).** Off-by-default reordering was explicitly not
+  needed for v1.
+
+The map preview and a print view *are* included.
+
+## Security note
+
+Two things worth acting on, both pre-existing and neither introduced here:
+
+1. **`db-proxy` is an unauthenticated service-role SQL endpoint.** It is
+   deployed with `verify_jwt: false` and `Access-Control-Allow-Origin: *`, and it
+   forwards an arbitrary `sql` parameter to an `execute_sql` RPC using the
+   service-role key. Anyone who knows the URL can read or write any table,
+   bypassing RLS. Worth putting behind a shared secret or JWT verification, or
+   removing if nothing depends on it.
+2. **`fuel_cost_calculations` has RLS disabled**, so it is readable and writable
+   by anyone holding the anon key. Enabling it needs policies added at the same
+   time, or all access breaks:
+   ```sql
+   ALTER TABLE public.fuel_cost_calculations ENABLE ROW LEVEL SECURITY;
+   ```
