@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 import { readdirSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -16,7 +16,33 @@ const apiDir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'api');
 function vercelApiDev() {
   return {
     name: 'vercel-api-dev',
+    // `apply: 'serve'` keeps this whole plugin — including the env loading
+    // below — out of the production build.
     apply: 'serve',
+
+    /**
+     * Put the server-side variables from .env.local into `process.env`.
+     *
+     * Vite only exposes VITE_-prefixed variables, and only on
+     * `import.meta.env` — it deliberately never writes to `process.env`. The
+     * api/ handlers are ordinary Node code reading `process.env`, so without
+     * this they see nothing in dev and every request fails on a missing key.
+     * `vercel dev` and the deployed functions do this for us; the Vite dev
+     * server does not.
+     *
+     * The empty prefix loads every variable, which is the point: the keys we
+     * need here are exactly the un-prefixed ones Vite keeps out of the client
+     * bundle. That bundle is unaffected — Vite only ever inlines
+     * `import.meta.env.VITE_*` into client code.
+     */
+    configResolved(config) {
+      const env = loadEnv(config.mode, config.envDir || process.cwd(), '');
+      for (const [key, value] of Object.entries(env)) {
+        // A real shell variable always wins over a .env file.
+        if (process.env[key] === undefined) process.env[key] = value;
+      }
+    },
+
     configureServer(server) {
       if (!existsSync(apiDir)) return;
       const routes = new Set(

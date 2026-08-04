@@ -43,12 +43,19 @@ npm test                     # scheduling + timezone tests
 
 `npm run dev` runs the `api/` functions inside the Vite dev server (see the
 `vercelApiDev` plugin in `vite.config.js`), so the local app behaves like the
-deployed one without needing the Vercel CLI.
+deployed one without needing the Vercel CLI. That plugin also loads
+`.env.local` into `process.env` for those handlers — Vite on its own exposes
+only `VITE_`-prefixed variables, and only on `import.meta.env`, so the
+server-side keys would otherwise be invisible in dev. A variable already set in
+your shell wins over the file.
 
 ### Environment variables
 
-All server-side; see `.env.example`. None is `VITE_`-prefixed, so none reaches
-the browser bundle.
+`.env.local` is for local development only — it is gitignored and never
+deployed. **On Vercel, set the same variables in the project settings instead.**
+
+All of them are server-side; see `.env.example`. None is `VITE_`-prefixed, so
+none reaches the browser bundle.
 
 | Variable | Required | Purpose |
 | --- | --- | --- |
