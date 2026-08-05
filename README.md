@@ -66,9 +66,29 @@ none reaches the browser bundle.
 | `BASE_ADDRESS` / `BASE_ADDRESS_LABEL` | no | Fallback base if no `is_home` location exists |
 | `PLANNER_TIMEZONE` | no | Defaults to `Australia/Melbourne` |
 
-Enable **Routes API** and **Maps Static API** on the key. An IP restriction is
-not practical on Vercel's serverless egress, so restrict the key by API instead
-and keep it server-side.
+#### Restricting the Google Maps key
+
+Enable **Routes API** and **Maps Static API** on the key, then set its
+restrictions in the Cloud Console as:
+
+- **Application restrictions: None**
+- **API restrictions: Restrict key** → Routes API, Maps Static API
+
+This is the one bit of key setup that is easy to get wrong. Every Maps call in
+this app is made from a Vercel function, never from the browser, and a
+server-side request sends no `Referer` header — so an **HTTP referrer**
+restriction rejects all of them:
+
+```
+Routes API failed for <origin> → <destination>:
+Requests from referer <empty> are blocked.
+```
+
+An IP restriction is no better: Vercel's serverless egress addresses are not
+fixed. That leaves the API restriction as the meaningful one, which is fine
+here — the key exists only in the server environment and is never exposed to a
+client. If you also keep a referrer-restricted key for browser use elsewhere,
+make this a separate key rather than loosening that one.
 
 ### Deploying
 
