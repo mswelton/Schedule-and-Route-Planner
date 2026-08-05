@@ -96,6 +96,27 @@ Vercel auto-detects the Vite build and serves `api/*.js` as Node functions — n
 `vercel.json` needed. Set the environment variables in the project settings and
 push.
 
+Note that Vercel scopes environment variables per environment — Production,
+Preview and Development each hold their own values. A key set for Production
+does not apply to a PR preview deployment. Changing a variable's value also
+requires a redeploy before it takes effect.
+
+### Checking a deployment: `/api/diag`
+
+Visit `/api/diag` on any deployment to see whether its three external
+dependencies actually work *from that environment*. It returns JSON:
+
+- which `VERCEL_ENV`, region, branch and commit answered
+- whether each variable is set, and a SHA-256 prefix of the Maps key
+- a live Supabase read (counts only — no client data)
+- a live Routes API leg and a live Static Maps request, with Google's own error
+  text when they fail
+
+The Maps key is never returned, only its length and hash prefix. That is enough
+to tell whether two environments hold the *same* key — the usual explanation for
+"I fixed the key but it still fails" is that the deployment being tested reads a
+different one.
+
 ## Decisions worth knowing about
 
 **Base address — it already exists in the schema.** `profiles` has no address
@@ -137,6 +158,7 @@ api/            Vercel serverless functions — the only code that sees a key
   appointments.js GET  a date's appointments, grouped by location
   plan.js         POST the itinerary
   staticmap.js    POST route map image bytes (keeps the key off the client)
+  diag.js         GET  self-test of Supabase, Routes API and Static Maps
 lib/            Server-side modules
   schedule.js     Itinerary construction — no I/O, fully unit-tested
   google.js       Routes API client
