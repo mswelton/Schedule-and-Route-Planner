@@ -59,7 +59,10 @@ function vercelApiDev() {
           const mod = await server.ssrLoadModule(path.join(apiDir, `${url.pathname.slice(5)}.js`));
 
           req.query = Object.fromEntries(url.searchParams);
-          if (req.method === 'POST' || req.method === 'PUT') {
+          // Every verb that can carry a body, not just the two the app used
+          // first: a request whose body is silently dropped here looks like a
+          // handler bug and is a miserable half hour to track down.
+          if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
             const chunks = [];
             for await (const chunk of req) chunks.push(chunk);
             const raw = Buffer.concat(chunks).toString('utf8');

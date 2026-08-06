@@ -45,7 +45,7 @@ function Navigate({ stop }) {
   );
 }
 
-export default function Itinerary({ plan, onSave, saving, savedAt }) {
+export default function Itinerary({ plan, onSave, saving, savedAt, updating }) {
   if (!plan) return null;
 
   const { totals } = plan;
@@ -65,8 +65,26 @@ export default function Itinerary({ plan, onSave, saving, savedAt }) {
             </a>
           )}
           {onSave && (
-            <button type="button" className="secondary" onClick={onSave} disabled={saving || savedAt}>
-              {saving ? 'Saving…' : savedAt ? 'Saved' : 'Save this run'}
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => onSave(false)}
+              disabled={saving || Boolean(savedAt)}
+            >
+              {saving
+                ? 'Saving…'
+                : savedAt
+                  ? 'Saved'
+                  : updating
+                    ? 'Update saved run'
+                    : 'Save this run'}
+            </button>
+          )}
+          {/* Only offered when replacing would otherwise be the default, for
+              the day where a second version is genuinely wanted. */}
+          {onSave && updating && !savedAt && (
+            <button type="button" className="secondary" onClick={() => onSave(true)} disabled={saving}>
+              Save as a new run
             </button>
           )}
           <button type="button" className="secondary" onClick={() => window.print()}>

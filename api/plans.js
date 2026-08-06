@@ -4,6 +4,13 @@
  * GET            — the most recent saved runs, newest first (summaries only).
  * GET ?id=<uuid> — one saved run, with its full stored itinerary.
  * POST           — save the itinerary the browser is currently showing.
+ * PUT ?id=<uuid> — replace a saved run with a freshly worked-out one.
+ * DELETE ?id=    — remove a saved run.
+ *
+ * `PUT` exists so that reopening a run, adjusting it and re-planning updates
+ * *that* row rather than adding a second one. Without it the table fills with
+ * near-duplicates of the same day — which is not hypothetical: the fuel table
+ * carries two identical rows for 2026-07-25, eight seconds apart.
  *
  * A planned run used to live until the tab closed. This keeps it, so a day can
  * be reopened later without recomputing — and without paying for — the Routes
@@ -47,6 +54,37 @@ function missingTableResponse(res) {
 
 const integer = (value) => Math.max(0, Math.round(Number(value) || 0));
 
+/**
+ * The stored columns for an itinerary. The totals are echoed back from a plan
+ * this server produced, the same trade api/fuel-log.js makes: recomputing
+ * would mean paying for every Routes call again, and they are only ever read
+ * back out to the same user.
+ */
+function planRow(plan) {
+  return {
+    run_date: plan.date,
+    base_label: plan.base?.label || null,
+    base_address: plan.base?.address || null,
+    stop_count: plan.stops.length,
+    total_distance_m: integer(plan.totals.distanceMeters),
+    total_driving_seconds: integer(plan.totals.drivingSeconds),
+    total_on_site_minutes: integer(plan.totals.onSiteMinutes),
+    day_length_seconds: integer(plan.totals.dayLengthSeconds),
+    leave_base_clock: plan.leaveBase?.clock || null,
+    return_to_base_clock: plan.returnToBase?.clock || null,
+    plan,
+  };
+}
+
+/** Shared shape check for POST and PUT. Returns a message, or null if fine. */
+function planProblem(plan) {
+  if (!plan || typeof plan !== 'object') return 'A planned run is required.';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(plan.date || '')) return 'That run has no valid date.';
+  if (!Array.isArray(plan.stops) || plan.stops.length === 0) return 'That run has no stops.';
+  if (!plan.totals || typeof plan.totals !== 'object') return 'That run has no totals.';
+  return null;
+}
+
 async function handleGet(req, res, supabase, userId) {
   const id = (req.query?.id || '').toString();
 
@@ -82,42 +120,12 @@ async function handleGet(req, res, supabase, userId) {
 
 async function handlePost(req, res, supabase, userId) {
   const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body || {};
-  const plan = body.plan;
-
-  if (!plan || typeof plan !== 'object') {
-    return res.status(400).json({ error: 'A planned run is required.' });
-  }
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(plan.date || '')) {
-    return res.status(400).json({ error: 'That run has no valid date.' });
-  }
-  if (!Array.isArray(plan.stops) || plan.stops.length === 0) {
-    return res.status(400).json({ error: 'That run has no stops.' });
-  }
-  if (!plan.totals || typeof plan.totals !== 'object') {
-    return res.status(400).json({ error: 'That run has no totals.' });
-  }
-
-  // The totals are echoed back from an itinerary this server produced, the
-  // same trade api/fuel-log.js makes: recomputing would mean paying for every
-  // Routes call again. They are only ever read back out to this same user.
-  const row = {
-    user_id: userId,
-    run_date: plan.date,
-    base_label: plan.base?.label || null,
-    base_address: plan.base?.address || null,
-    stop_count: plan.stops.length,
-    total_distance_m: integer(plan.totals.distanceMeters),
-    total_driving_seconds: integer(plan.totals.drivingSeconds),
-    total_on_site_minutes: integer(plan.totals.onSiteMinutes),
-    day_length_seconds: integer(plan.totals.dayLengthSeconds),
-    leave_base_clock: plan.leaveBase?.clock || null,
-    return_to_base_clock: plan.returnToBase?.clock || null,
-    plan,
-  };
+  const problem = planProblem(body.plan);
+  if (problem) return res.status(400).json({ error: problem });
 
   const { data, error } = await supabase
     .from('route_plans')
-    .insert(row)
+    .insert({ user_id: userId, ...planRow(body.plan) })
     .select(SUMMARY_COLUMNS)
     .single();
   if (error) {
@@ -128,9 +136,53 @@ async function handlePost(req, res, supabase, userId) {
   return res.status(201).json(data);
 }
 
+async function handlePut(req, res, supabase, userId) {
+  const id = (req.query?.id || '').toString();
+  if (!id) return res.status(400).json({ error: 'Which saved run should be updated?' });
+
+  const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body || {};
+  const problem = planProblem(body.plan);
+  if (problem) return res.status(400).json({ error: problem });
+
+  // Scoped, so one operator cannot overwrite another's saved run by id.
+  const { data, error } = await scopeToUser(
+    supabase.from('route_plans').update(planRow(body.plan)).eq('id', id),
+    userId
+  )
+    .select(SUMMARY_COLUMNS)
+    .maybeSingle();
+  if (error) {
+    if (isMissingTable(error)) return missingTableResponse(res);
+    throw new Error(error.message);
+  }
+  if (!data) return res.status(404).json({ error: 'That saved run no longer exists.' });
+
+  return res.status(200).json(data);
+}
+
+async function handleDelete(req, res, supabase, userId) {
+  const id = (req.query?.id || '').toString();
+  if (!id) return res.status(400).json({ error: 'Which saved run should be deleted?' });
+
+  const { data, error } = await scopeToUser(
+    supabase.from('route_plans').delete().eq('id', id),
+    userId
+  )
+    .select('id')
+    .maybeSingle();
+  if (error) {
+    if (isMissingTable(error)) return missingTableResponse(res);
+    throw new Error(error.message);
+  }
+  if (!data) return res.status(404).json({ error: 'That saved run no longer exists.' });
+
+  return res.status(200).json({ id: data.id });
+}
+
 export default async function handler(req, res) {
-  if (req.method !== 'GET' && req.method !== 'POST') {
-    res.setHeader('Allow', 'GET, POST');
+  const allowed = ['GET', 'POST', 'PUT', 'DELETE'];
+  if (!allowed.includes(req.method)) {
+    res.setHeader('Allow', allowed.join(', '));
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
@@ -139,9 +191,10 @@ export default async function handler(req, res) {
 
   try {
     const supabase = serverSupabase();
-    return req.method === 'GET'
-      ? await handleGet(req, res, supabase, user.id)
-      : await handlePost(req, res, supabase, user.id);
+    if (req.method === 'GET') return await handleGet(req, res, supabase, user.id);
+    if (req.method === 'POST') return await handlePost(req, res, supabase, user.id);
+    if (req.method === 'PUT') return await handlePut(req, res, supabase, user.id);
+    return await handleDelete(req, res, supabase, user.id);
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }

@@ -6,12 +6,42 @@ import OptimiseOrder from './components/OptimiseOrder.jsx';
 import SavedRuns from './components/SavedRuns.jsx';
 import Itinerary from './components/Itinerary.jsx';
 import SignIn from './components/SignIn.jsx';
-import { fetchLocations, fetchAppointments, planRoute, saveRun } from './lib/api.js';
+import History from './components/History.jsx';
+import {
+  fetchLocations,
+  fetchAppointments,
+  planRoute,
+  saveRun,
+  updateSavedRun,
+} from './lib/api.js';
 import { supabaseClient, signOut } from './lib/auth.js';
 import { todayIso } from './lib/format.js';
 
 const DEFAULT_ON_SITE_MINUTES = 45;
 const BASE_STORAGE_KEY = 'thc-route-planner:base';
+
+/**
+ * Two screens is not a router's worth of problem. The hash gives us the back
+ * button and a linkable URL for nothing.
+ */
+function useHashView() {
+  const [view, setView] = useState(() =>
+    window.location.hash === '#/history' ? 'history' : 'planner'
+  );
+
+  useEffect(() => {
+    const onChange = () =>
+      setView(window.location.hash === '#/history' ? 'history' : 'planner');
+    window.addEventListener('hashchange', onChange);
+    return () => window.removeEventListener('hashchange', onChange);
+  }, []);
+
+  const go = useCallback((next) => {
+    window.location.hash = next === 'history' ? '#/history' : '';
+  }, []);
+
+  return [view, go];
+}
 
 /**
  * A base saved here is an explicit *override* of the Supabase home location.
@@ -56,6 +86,11 @@ export default function App() {
   const [savedAt, setSavedAt] = useState(null);
   // Bumped after a save so the saved-runs list reloads.
   const [savedRunsToken, setSavedRunsToken] = useState(0);
+  // The saved run currently open, if any. Re-planning updates *that* row
+  // rather than adding a near-duplicate of the same day.
+  const [openRunId, setOpenRunId] = useState(null);
+
+  const [view, goToView] = useHashView();
 
   useEffect(() => {
     let subscription = null;
@@ -201,7 +236,9 @@ export default function App() {
     try {
       const result = await planRoute({ date, firstAppointmentTime, base, stops });
       setPlan(result);
-      // A freshly worked-out run has not been saved, even if the previous one was.
+      // A freshly worked-out run has not been saved, even if the previous one
+      // was. `openRunId` deliberately survives, so this becomes an update of
+      // the run being adjusted rather than a second row for the same day.
       setSavedAt(null);
     } catch (err) {
       setPlanError(err.message);
@@ -211,28 +248,42 @@ export default function App() {
     }
   }, [date, firstAppointmentTime, base, stops]);
 
-  const handleSave = useCallback(async () => {
-    if (!plan) return;
-    setSaving(true);
-    setPlanError(null);
-    try {
-      await saveRun(plan);
-      setSavedAt(Date.now());
-      setSavedRunsToken((n) => n + 1);
-    } catch (err) {
-      setPlanError(err.message);
-    } finally {
-      setSaving(false);
-    }
-  }, [plan]);
+  /**
+   * Save the current plan. When a saved run is open this replaces it, so
+   * adjusting and re-planning a day does not leave two rows for it.
+   * `asNew` forces a fresh row for the case where a variant is wanted.
+   */
+  const handleSave = useCallback(
+    async (asNew = false) => {
+      if (!plan) return;
+      setSaving(true);
+      setPlanError(null);
+      try {
+        if (openRunId && !asNew) {
+          await updateSavedRun(openRunId, plan);
+        } else {
+          const created = await saveRun(plan);
+          setOpenRunId(created.id);
+        }
+        setSavedAt(Date.now());
+        setSavedRunsToken((n) => n + 1);
+      } catch (err) {
+        setPlanError(err.message);
+      } finally {
+        setSaving(false);
+      }
+    },
+    [plan, openRunId]
+  );
 
   /**
    * Reopen a saved run: show the stored itinerary, and put the day that
    * produced it back in the editor so it can be adjusted and re-planned.
    */
   const openSavedRun = useCallback(
-    (saved) => {
+    (saved, savedId = null) => {
       setPlan(saved);
+      setOpenRunId(savedId);
       setSavedAt(Date.now()); // it is, by definition, already saved
       setNotice(null);
       setPlanError(null);
@@ -263,6 +314,18 @@ export default function App() {
   if (session === undefined) return <p className="app muted">Loading…</p>;
   if (!session) return <SignIn configError={configError} />;
 
+  if (view === 'history') {
+    return (
+      <History
+        onBack={() => goToView('planner')}
+        onOpenRun={(saved, id) => {
+          openSavedRun(saved, id);
+          goToView('planner');
+        }}
+      />
+    );
+  }
+
   return (
     <div className="app">
       <header className="app-header no-print">
@@ -271,9 +334,14 @@ export default function App() {
           <h1>Route Planner</h1>
           <p className="muted small">Turn a day's stops into a timed itinerary.</p>
         </div>
-        <button type="button" className="link sign-out" onClick={signOut}>
-          Sign out
-        </button>
+        <div className="header-actions">
+          <button type="button" className="link" onClick={() => goToView('history')}>
+            History
+          </button>
+          <button type="button" className="link" onClick={signOut}>
+            Sign out
+          </button>
+        </div>
       </header>
 
       {loadError && (
@@ -348,7 +416,13 @@ export default function App() {
         </div>
       </div>
 
-      <Itinerary plan={plan} onSave={handleSave} saving={saving} savedAt={savedAt} />
+      <Itinerary
+        plan={plan}
+        onSave={handleSave}
+        saving={saving}
+        savedAt={savedAt}
+        updating={Boolean(openRunId)}
+      />
     </div>
   );
 }

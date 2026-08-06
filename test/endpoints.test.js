@@ -41,14 +41,24 @@ function fakeRes() {
   return { res, sent };
 }
 
-/** Call a handler with whichever verb it accepts, carrying no credentials. */
+const VERBS = ['GET', 'POST', 'PUT', 'DELETE'];
+
+/**
+ * Every verb a handler accepts, called with no credentials.
+ *
+ * All four are tried rather than stopping at the first: an endpoint that
+ * guards `GET` but not `DELETE` is exactly the mistake worth catching, and
+ * checking only the first accepted verb would miss it.
+ */
 async function callWithoutAuth(handler) {
-  for (const method of ['GET', 'POST']) {
+  const answered = [];
+  for (const method of VERBS) {
     const { res, sent } = fakeRes();
     await handler({ method, headers: {}, query: {}, body: {} }, res);
-    if (sent.status !== 405) return sent;
+    if (sent.status !== 405) answered.push({ method, sent });
   }
-  throw new Error('handler accepted neither GET nor POST');
+  if (answered.length === 0) throw new Error('handler accepted none of ' + VERBS.join(', '));
+  return answered;
 }
 
 test('there is at least one endpoint to check', () => {
@@ -56,19 +66,23 @@ test('there is at least one endpoint to check', () => {
 });
 
 for (const { name, file } of handlers) {
-  test(`/api/${name} ${name === 'config' ? 'is deliberately public' : 'rejects an unauthenticated request'}`, async () => {
+  test(`/api/${name} ${name === 'config' ? 'is deliberately public' : 'rejects an unauthenticated request on every verb it accepts'}`, async () => {
     const { default: handler } = await import(file);
-    const sent = await callWithoutAuth(handler);
+    const answered = await callWithoutAuth(handler);
 
     if (name === 'config') {
       // The one endpoint that must answer without a session — it is what the
       // browser needs in order to sign in at all.
-      assert.notEqual(sent.status, 401, '/api/config must not require a session');
+      for (const { method, sent } of answered) {
+        assert.notEqual(sent.status, 401, `/api/config must not require a session (${method})`);
+      }
       return;
     }
 
-    assert.equal(sent.status, 401, `/api/${name} answered ${sent.status} instead of 401`);
-    assert.match(sent.body?.error || '', /sign in/i);
+    for (const { method, sent } of answered) {
+      assert.equal(sent.status, 401, `${method} /api/${name} answered ${sent.status}, not 401`);
+      assert.match(sent.body?.error || '', /sign in/i);
+    }
   });
 }
 

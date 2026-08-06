@@ -1,14 +1,23 @@
 /**
  * /api/fuel-log
  *
- * GET  — the litres/100 km and $/litre from the last run logged, as defaults.
- * POST — record this run in `fuel_cost_calculations`.
+ * GET             — the litres/100 km and $/litre from the last run logged.
+ * GET ?history=1  — every logged run, newest first, for the History screen.
+ * POST            — record this run in `fuel_cost_calculations`.
+ * PUT ?id=        — correct a logged run.
+ * DELETE ?id=     — remove one.
  *
- * This is the one place the planner *writes* to the practice database.
- * Everything else here is read-only. The table already existed and was being
- * filled in by hand; the distance being typed in is the number this app
- * computes as a side effect of working out the day, so the typing is the part
- * worth removing.
+ * This is the one place the planner *writes* to a table it does not own.
+ * The table already existed and was being filled in by hand; the distance
+ * being typed in is the number this app computes as a side effect of working
+ * out the day, so the typing is the part worth removing.
+ *
+ * **`fuel_cost_calculations` has no `user_id` column, so none of this can be
+ * scoped to one operator.** The history is the practice's, and an edit or a
+ * delete here changes rows the main hoof-tracker app also writes. That is a
+ * deliberate, discussed choice — it is one operator and one vehicle, and 15 of
+ * the rows were hand-entered before this app existed — but it is why the
+ * client confirms a delete by naming the row rather than just asking.
  *
  * Body (POST):
  *   {
@@ -19,35 +28,43 @@
  *     locationIds:      string[]    // the run's stops, in visit order
  *   }
  *
- * The description and the appointment ids are rebuilt server-side from those
- * location ids rather than taken from the request, so a logged run always
- * describes rows that actually exist. The distance is the exception: it is
- * echoed back from a plan this server produced moments earlier, and
- * recomputing it would mean paying for the whole run of Routes API calls
- * again. It is range-checked instead.
+ * Body (PUT): the same three figures plus `date` and `description`, all of
+ * which a human may have corrected. The derived columns are recomputed from
+ * them rather than accepted.
+ *
+ * On POST the description and appointment ids are rebuilt server-side from the
+ * location ids, so a logged run always describes rows that exist. The distance
+ * is the exception: it is echoed back from a plan this server produced moments
+ * earlier, and recomputing it would mean paying for the whole run of Routes API
+ * calls again. It is range-checked instead.
  */
 
 import { serverSupabase, scopeToUser } from '../lib/supabase.js';
 import { authenticate } from '../lib/auth.js';
+import { validateFuelInputs, computeFuelFigures } from '../lib/fuel.js';
 
-// Sanity bounds, not business rules — they exist to keep a typo out of the
-// practice database, not to tell Mark what a plausible day looks like.
-const MAX_DISTANCE_KM = 2000;
-const MAX_CONSUMPTION = 100;
-const MAX_PRICE = 20;
+const HISTORY_LIMIT = 200;
+
+const ROW_COLUMNS =
+  'id, trim_run_date, description, distance_traveled, fuel_consumption, fuel_cost, ' +
+  'litres_consumption, trip_cost, cost_per_km, appointment_ids, created_at';
 
 function badRequest(res, message) {
   return res.status(400).json({ error: message });
 }
 
-function positiveNumber(value, max) {
-  const n = Number(value);
-  return Number.isFinite(n) && n > 0 && n <= max ? n : null;
-}
+async function handleGet(req, res, supabase) {
+  if (req.query?.history) {
+    const { data, error } = await supabase
+      .from('fuel_cost_calculations')
+      .select(ROW_COLUMNS)
+      .order('trim_run_date', { ascending: false })
+      .order('created_at', { ascending: false })
+      .limit(HISTORY_LIMIT);
+    if (error) throw new Error(error.message);
+    return res.status(200).json({ entries: data || [] });
+  }
 
-const round = (n, places) => Number(n.toFixed(places));
-
-async function handleGet(res, supabase) {
   // The table carries no user_id, so this is the practice's last run rather
   // than this operator's — which matches how the rows are written today.
   const { data, error } = await supabase
@@ -72,18 +89,9 @@ async function handlePost(req, res, supabase, userId) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date || '')) {
     return badRequest(res, 'A run date (YYYY-MM-DD) is required.');
   }
-  const distanceKm = positiveNumber(body.distanceKm, MAX_DISTANCE_KM);
-  if (distanceKm === null) {
-    return badRequest(res, `Distance must be between 0 and ${MAX_DISTANCE_KM} km.`);
-  }
-  const fuelConsumption = positiveNumber(body.fuelConsumption, MAX_CONSUMPTION);
-  if (fuelConsumption === null) {
-    return badRequest(res, 'Fuel use must be a positive figure in litres per 100 km.');
-  }
-  const fuelPrice = positiveNumber(body.fuelPrice, MAX_PRICE);
-  if (fuelPrice === null) {
-    return badRequest(res, 'Fuel price must be a positive figure in dollars per litre.');
-  }
+  const figures = validateFuelInputs(body);
+  if (figures.error) return badRequest(res, figures.error);
+
   if (!Array.isArray(locationIds) || locationIds.length === 0) {
     return badRequest(res, 'A run needs at least one stop to log.');
   }
@@ -109,9 +117,7 @@ async function handlePost(req, res, supabase, userId) {
   const { data: appointments, error: apptError } = await scopeToUser(
     supabase
       .from('appointments')
-      .select(
-        'id, service_location_id, scheduled_time, horses!appointments_horse_id_fkey ( name )'
-      )
+      .select('id, service_location_id, scheduled_time, horses!appointments_horse_id_fkey ( name )')
       .eq('scheduled_date', date)
       .in('service_location_id', locationIds)
       .order('scheduled_time', { ascending: true, nullsFirst: false }),
@@ -138,34 +144,73 @@ async function handlePost(req, res, supabase, userId) {
     })
     .join('; ');
 
-  const litres = (distanceKm * fuelConsumption) / 100;
-  const tripCost = litres * fuelPrice;
-
-  const row = {
-    trim_run_date: date,
-    description,
-    distance_traveled: round(distanceKm, 1),
-    fuel_consumption: fuelConsumption,
-    fuel_cost: fuelPrice,
-    litres_consumption: round(litres, 2),
-    trip_cost: round(tripCost, 2),
-    cost_per_km: round(tripCost / distanceKm, 4),
-    appointment_ids: appointmentIds.length ? appointmentIds : null,
-  };
-
   const { data: inserted, error: insertError } = await supabase
     .from('fuel_cost_calculations')
-    .insert(row)
-    .select('id, trip_cost, litres_consumption, cost_per_km, description, appointment_ids')
+    .insert({
+      trim_run_date: date,
+      description,
+      ...computeFuelFigures(figures),
+      appointment_ids: appointmentIds.length ? appointmentIds : null,
+    })
+    .select(ROW_COLUMNS)
     .single();
   if (insertError) throw new Error(insertError.message);
 
   return res.status(201).json(inserted);
 }
 
+async function handlePut(req, res, supabase) {
+  const id = (req.query?.id || '').toString();
+  if (!id) return badRequest(res, 'Which logged run should be updated?');
+
+  const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body || {};
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(body.date || '')) {
+    return badRequest(res, 'A run date (YYYY-MM-DD) is required.');
+  }
+  const figures = validateFuelInputs(body);
+  if (figures.error) return badRequest(res, figures.error);
+
+  // The description is the operator's own words on an edit, unlike the insert
+  // path where it is composed from the run. `appointment_ids` is left alone —
+  // which appointments a run covered is not something an edit should rewrite.
+  const description = typeof body.description === 'string' ? body.description.trim() : null;
+
+  const { data, error } = await supabase
+    .from('fuel_cost_calculations')
+    .update({
+      trim_run_date: body.date,
+      description: description || null,
+      ...computeFuelFigures(figures),
+    })
+    .eq('id', id)
+    .select(ROW_COLUMNS)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) return res.status(404).json({ error: 'That logged run no longer exists.' });
+
+  return res.status(200).json(data);
+}
+
+async function handleDelete(req, res, supabase) {
+  const id = (req.query?.id || '').toString();
+  if (!id) return badRequest(res, 'Which logged run should be deleted?');
+
+  const { data, error } = await supabase
+    .from('fuel_cost_calculations')
+    .delete()
+    .eq('id', id)
+    .select('id')
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) return res.status(404).json({ error: 'That logged run no longer exists.' });
+
+  return res.status(200).json({ id: data.id });
+}
+
 export default async function handler(req, res) {
-  if (req.method !== 'GET' && req.method !== 'POST') {
-    res.setHeader('Allow', 'GET, POST');
+  const allowed = ['GET', 'POST', 'PUT', 'DELETE'];
+  if (!allowed.includes(req.method)) {
+    res.setHeader('Allow', allowed.join(', '));
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
@@ -174,9 +219,10 @@ export default async function handler(req, res) {
 
   try {
     const supabase = serverSupabase();
-    return req.method === 'GET'
-      ? await handleGet(res, supabase)
-      : await handlePost(req, res, supabase, user.id);
+    if (req.method === 'GET') return await handleGet(req, res, supabase);
+    if (req.method === 'POST') return await handlePost(req, res, supabase, user.id);
+    if (req.method === 'PUT') return await handlePut(req, res, supabase);
+    return await handleDelete(req, res, supabase);
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
