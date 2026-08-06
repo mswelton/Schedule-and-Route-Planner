@@ -45,7 +45,7 @@ function Navigate({ stop }) {
   );
 }
 
-export default function Itinerary({ plan }) {
+export default function Itinerary({ plan, onSave, saving, savedAt }) {
   if (!plan) return null;
 
   const { totals } = plan;
@@ -63,6 +63,11 @@ export default function Itinerary({ plan }) {
             <a className="button secondary" href={day.url} target="_blank" rel="noreferrer">
               Open the day in Google Maps
             </a>
+          )}
+          {onSave && (
+            <button type="button" className="secondary" onClick={onSave} disabled={saving || savedAt}>
+              {saving ? 'Saving…' : savedAt ? 'Saved' : 'Save this run'}
+            </button>
           )}
           <button type="button" className="secondary" onClick={() => window.print()}>
             Print

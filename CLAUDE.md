@@ -11,11 +11,14 @@ arrives at and leaves each property, when he is back, with per-leg drive time,
 distance and any routing warnings Google returns.
 
 It reads the practice database (`hoof-tracker` on Supabase, shared with Mark's
-main app) and owns no tables in it. It writes in exactly one place:
-`api/fuel-log.js` inserts a row into `fuel_cost_calculations` when Mark logs a
-run. Everything else is read-only, and it should stay that way — if you are
-adding a second write, that is a decision worth raising rather than a pattern
-to follow.
+main app). It owns exactly one table there — `route_plans`, the saved
+itineraries — and writes to one table it does not own: `api/fuel-log.js`
+inserts into `fuel_cost_calculations` when Mark logs a run.
+
+**It deliberately does not write to `appointments`.** Pushing the planner's
+computed times onto real bookings was considered and declined: the planner
+suggests times, and changing a time a client has already been given stays a
+decision made in the main app. Do not add that without asking.
 
 ## Commands
 
@@ -38,8 +41,9 @@ There is no linter and no CI workflow. `npm test` is the whole gate.
 Three layers, and the boundary between them is a security boundary:
 
 - **`api/*.js`** — Vercel serverless functions. The *only* code that sees a key.
-  Seven endpoints: `locations` (GET), `appointments` (GET), `plan` (POST),
-  `staticmap` (POST), `config` (GET), `fuel-log` (GET/POST), `optimise` (POST).
+  Eight endpoints: `locations` (GET), `appointments` (GET), `plan` (POST),
+  `staticmap` (POST), `config` (GET), `fuel-log` (GET/POST), `optimise` (POST),
+  `plans` (GET/POST — saved runs).
 - **`lib/*.js`** — server-side modules. **Never import these from `src/`.**
   `google.js` holds the Maps key, `supabase.js` holds the service-role key.
 - **`src/`** — the React app. Talks to `/api/*` through `src/lib/api.js` and
@@ -129,6 +133,20 @@ itinerary labels those legs.
 `api/optimise.js` suggests an order and changes nothing; applying it is a
 separate click. It is refused when any stop has a booked time — reordering
 those would break times clients have already been given.
+
+### Saved runs
+
+`route_plans` stores one row per planned run: the totals lifted out as columns
+so a run can be listed without unpacking anything, plus the whole `/api/plan`
+response as `jsonb`. Reopening renders the stored itinerary — no Routes API
+calls — and puts the day back in the editor so it can be adjusted and
+re-planned.
+
+**Migrations live in `docs/migrations/` and are applied by hand** in the
+Supabase SQL editor. There is no migration runner, and this app is a guest in
+that database. `api/plans.js` detects Postgres' `42P01` and says which file to
+apply rather than failing with an opaque 500, so a fresh deployment degrades
+readably.
 
 ### Leg caching
 
@@ -221,11 +239,19 @@ overridden it. "Reset to default" clears the key.
 
 ## Known gaps
 
-`docs/ROADMAP.md` is the prioritised plan and tracks what is built. Tier 0 (the
-two things the app got *wrong*) and all of Tier 1 are done. What is left is
-Tier 2 and 3: persisting plans and writing times back to `appointments` (needs
-a schema agreed first), day-shape guards, plan-versus-actual, CI, and offline
-support.
+`docs/ROADMAP.md` is the prioritised plan and tracks what is built. Tier 0, all
+of Tier 1, and plan persistence are done. Two Tier 2 items were **examined and
+dropped on the evidence**, which is recorded there — don't rebuild them without
+re-checking the data:
+
+- **Plan-versus-actual has no signal.** `appointments.actual_duration_minutes`
+  equals `estimated_duration_minutes` exactly on every row that has one, so it
+  is a copy rather than a measurement. Learning on-site times from it would
+  relearn the estimate.
+- **Day-shape guards would never have fired.** Across 50 run days the longest
+  span is 7.75 h and no day reaches 8.
+
+What is left is Tier 3: CI (there is none), offline support, and small fixes.
 
 One thing outside this repository, flagged there and in the README: the
 `fuel_cost_calculations` policies grant `anon` full read/write/delete

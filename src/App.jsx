@@ -3,9 +3,10 @@ import DaySettings from './components/DaySettings.jsx';
 import LocationPicker from './components/LocationPicker.jsx';
 import StopList from './components/StopList.jsx';
 import OptimiseOrder from './components/OptimiseOrder.jsx';
+import SavedRuns from './components/SavedRuns.jsx';
 import Itinerary from './components/Itinerary.jsx';
 import SignIn from './components/SignIn.jsx';
-import { fetchLocations, fetchAppointments, planRoute } from './lib/api.js';
+import { fetchLocations, fetchAppointments, planRoute, saveRun } from './lib/api.js';
 import { supabaseClient, signOut } from './lib/auth.js';
 import { todayIso } from './lib/format.js';
 
@@ -50,6 +51,11 @@ export default function App() {
   const [planning, setPlanning] = useState(false);
   const [planError, setPlanError] = useState(null);
   const [notice, setNotice] = useState(null);
+
+  const [saving, setSaving] = useState(false);
+  const [savedAt, setSavedAt] = useState(null);
+  // Bumped after a save so the saved-runs list reloads.
+  const [savedRunsToken, setSavedRunsToken] = useState(0);
 
   useEffect(() => {
     let subscription = null;
@@ -195,6 +201,8 @@ export default function App() {
     try {
       const result = await planRoute({ date, firstAppointmentTime, base, stops });
       setPlan(result);
+      // A freshly worked-out run has not been saved, even if the previous one was.
+      setSavedAt(null);
     } catch (err) {
       setPlanError(err.message);
       setPlan(null);
@@ -202,6 +210,52 @@ export default function App() {
       setPlanning(false);
     }
   }, [date, firstAppointmentTime, base, stops]);
+
+  const handleSave = useCallback(async () => {
+    if (!plan) return;
+    setSaving(true);
+    setPlanError(null);
+    try {
+      await saveRun(plan);
+      setSavedAt(Date.now());
+      setSavedRunsToken((n) => n + 1);
+    } catch (err) {
+      setPlanError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }, [plan]);
+
+  /**
+   * Reopen a saved run: show the stored itinerary, and put the day that
+   * produced it back in the editor so it can be adjusted and re-planned.
+   */
+  const openSavedRun = useCallback(
+    (saved) => {
+      setPlan(saved);
+      setSavedAt(Date.now()); // it is, by definition, already saved
+      setNotice(null);
+      setPlanError(null);
+      setDate(saved.date);
+      if (saved.stops[0]?.arrivalClock) setFirstAppointmentTime(saved.stops[0].arrivalClock);
+      setStops(
+        saved.stops.map((stop) => ({
+          locationId: stop.id,
+          onSiteMinutes: stop.onSiteMinutes,
+          scheduledTime: stop.bookedForClock || null,
+        }))
+      );
+      if (saved.base?.address) {
+        changeBase({
+          name: saved.base.label || 'Base',
+          address: saved.base.address,
+          lat: saved.base.lat ?? null,
+          lng: saved.base.lng ?? null,
+        });
+      }
+    },
+    [changeBase]
+  );
 
   const hasBase = Boolean(base.address) || (Number.isFinite(base.lat) && Number.isFinite(base.lng));
   const canPlan = stops.length > 0 && hasBase && !planning;
@@ -253,6 +307,8 @@ export default function App() {
             onLoadAppointments={loadFromAppointments}
             busy={planning}
           />
+
+          <SavedRuns refreshToken={savedRunsToken} onOpen={openSavedRun} />
         </div>
 
         <div className="column">
@@ -292,7 +348,7 @@ export default function App() {
         </div>
       </div>
 
-      <Itinerary plan={plan} />
+      <Itinerary plan={plan} onSave={handleSave} saving={saving} savedAt={savedAt} />
     </div>
   );
 }
