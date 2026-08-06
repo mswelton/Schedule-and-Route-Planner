@@ -63,11 +63,28 @@ export default function Itinerary({ plan }) {
           <span className="summary-label">On site</span>
           <strong className="summary-value">{formatMinutes(totals.onSiteMinutes)}</strong>
         </div>
+        {totals.waitingSeconds > 0 && (
+          <div>
+            <span className="summary-label">Waiting</span>
+            <strong className="summary-value">{formatDuration(totals.waitingSeconds)}</strong>
+            <span className="muted small">early for booked times</span>
+          </div>
+        )}
         <div>
           <span className="summary-label">Full day</span>
           <strong className="summary-value">{formatDuration(totals.dayLengthSeconds)}</strong>
         </div>
       </div>
+
+      {plan.lateStops?.length > 0 && (
+        <p className="error">
+          This run does not make {plan.lateStops.length === 1 ? 'a booked time' : 'its booked times'}:{' '}
+          {plan.lateStops
+            .map((s) => `${s.label} is ${formatDuration(s.lateSeconds)} late`)
+            .join(', ')}
+          . Move a stop, trim time on site, or start earlier.
+        </p>
+      )}
 
       {plan.geocodedFallbacks?.length > 0 && (
         <p className="notice">
@@ -97,6 +114,13 @@ export default function Itinerary({ plan }) {
                 <span className="stop-index small-index">{index + 1}</span> {stop.label}
               </strong>
               <span className="muted small">{stop.address}</span>
+              {stop.bookedForClock && (
+                <span className={stop.lateSeconds > 0 ? 'booked-late' : 'booked-for'}>
+                  Booked {stop.bookedForClock}
+                  {stop.lateSeconds > 0 && ` — arriving ${formatDuration(stop.lateSeconds)} late`}
+                  {stop.waitSeconds > 0 && ` — ${formatDuration(stop.waitSeconds)} wait on arrival`}
+                </span>
+              )}
               <span className="on-site">On site {formatMinutes(stop.onSiteMinutes)}</span>
               {stop.accessNotes && <span className="access-note">Access: {stop.accessNotes}</span>}
               <Leg leg={stop.legToNext} />

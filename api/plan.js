@@ -6,8 +6,12 @@
  *     date:                 'YYYY-MM-DD',
  *     firstAppointmentTime: 'HH:MM',            // local wall clock
  *     base:                 { name, address, lat, lng },
- *     stops:                [{ locationId, onSiteMinutes }]   // in visit order
+ *     stops:                [{ locationId, onSiteMinutes, scheduledTime? }]
  *   }
+ *
+ * `scheduledTime` is the wall-clock time the client was booked for ('HH:MM').
+ * Where it is given, the itinerary will not show an arrival earlier than it —
+ * it waits instead — and flags the stop when the run gets there late.
  *
  * Stop coordinates are resolved server-side from `service_locations` rather
  * than trusted from the request, so the itinerary always reflects the stored
@@ -53,6 +57,12 @@ export default async function handler(req, res) {
   if (stops.length > MAX_STOPS) {
     return badRequest(res, `A run is limited to ${MAX_STOPS} stops.`);
   }
+  const badTime = stops.find(
+    (s) => s.scheduledTime != null && s.scheduledTime !== '' && !/^\d{2}:\d{2}$/.test(s.scheduledTime)
+  );
+  if (badTime) {
+    return badRequest(res, `Booked times must be HH:MM — got "${badTime.scheduledTime}".`);
+  }
 
   try {
     const supabase = serverSupabase();
@@ -77,6 +87,7 @@ export default async function handler(req, res) {
     // Preserve the order the client sent — that is the visit order.
     const orderedStops = stops.map((stop) => {
       const row = byId.get(stop.locationId);
+      const booked = stop.scheduledTime || null;
       return {
         id: row.id,
         label: row.location_name,
@@ -85,6 +96,7 @@ export default async function handler(req, res) {
         lng: row.longitude,
         accessNotes: row.access_notes || null,
         onSiteMinutes: Math.max(0, Number(stop.onSiteMinutes) || 0),
+        scheduledTime: booked ? zonedToInstant(date, booked, DEFAULT_TIMEZONE) : null,
       };
     });
 
@@ -121,6 +133,7 @@ export default async function handler(req, res) {
         lng: orderedStops[i].lng,
         arrivalClock: clock(stop.arrival),
         departureClock: clock(stop.departure),
+        bookedForClock: stop.bookedFor === null ? null : clock(stop.bookedFor),
       })),
       returnToBase: {
         instant: itinerary.returnToBase,
@@ -128,6 +141,7 @@ export default async function handler(req, res) {
         nextDay: isNextDay(itinerary.returnToBase, itinerary.leaveBase, DEFAULT_TIMEZONE),
       },
       totals: itinerary.totals,
+      lateStops: itinerary.lateStops,
       warnings: itinerary.warnings,
       geocodedFallbacks: orderedStops
         .filter((s) => !(Number.isFinite(s.lat) && Number.isFinite(s.lng)))

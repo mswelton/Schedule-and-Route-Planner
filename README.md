@@ -18,9 +18,15 @@ The day is anchored on the **first appointment time**, not a leave time:
 leaveBase      = firstAppointment − drive(base → stop 1)
 arrival[0]     = firstAppointment
 departure[i]   = arrival[i] + timeOnSite[i]
-arrival[i]     = departure[i−1] + drive(stop i−1 → stop i)
+arrival[i]     = max(departure[i−1] + drive(i−1 → i), booked time of stop i)
 returnToBase   = departure[last] + drive(last stop → base)
 ```
+
+Where a stop carries the time the client was booked for — **Load from
+appointments** fills these in, and you can type or clear one per stop — the
+itinerary will not show you arriving before it. It shows the wait instead. If
+the run cannot get there in time it says so, in red, at the top and against the
+stop, rather than quietly printing an arrival the client was never told.
 
 Each leg is priced with the `departureTime` it is actually driven at, so the
 traffic estimate for the 07:00 run out is not the estimate for the 16:00 run

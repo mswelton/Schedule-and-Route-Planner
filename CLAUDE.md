@@ -80,12 +80,19 @@ scheduling rules are fully unit-tested against stubbed legs.
 The day is anchored on the **first appointment time**, not a leave time:
 
 ```
-leaveBase      = firstAppointment − drive(base → stop 1)
-arrival[0]     = firstAppointment
+anchor         = stops[0].scheduledTime ?? firstAppointment
+leaveBase      = anchor − drive(base → stop 1)
+arrival[0]     = anchor
 departure[i]   = arrival[i] + timeOnSite[i]
-arrival[i]     = departure[i−1] + drive(stop i−1 → stop i)
+arrival[i]     = max(departure[i−1] + drive(i−1 → i), scheduledTime[i])
 returnToBase   = departure[last] + drive(last stop → base)
 ```
+
+A stop carries `scheduledTime` when the client was booked for a particular
+time. Reaching it early means waiting (`waitSeconds`), so the arrival is held
+back rather than printed early; reaching it late is not something the schedule
+can absorb, so it is reported (`lateSeconds`, and collected into `lateStops`)
+and left visible. A stop without one just chains off the stop before it.
 
 Two consequences worth knowing before you change anything here:
 
@@ -166,13 +173,12 @@ overridden it. "Reset to default" clears the key.
 
 ## Known gaps
 
-`docs/ROADMAP.md` is the prioritised plan. One item in it is a thing the app
-gets wrong today, not a missing feature:
-
-**Booked appointment times are discarded for every stop but the first.**
-`api/appointments.js` returns `earliestTime` per location; `App.jsx` uses it
-only to set the anchor and then drops it. The itinerary can therefore print an
-arrival that contradicts what the client was told, with nothing flagging it.
+`docs/ROADMAP.md` is the prioritised plan. Its Tier 0 items — the two things
+the app got *wrong* rather than merely lacked — are both fixed now: the
+endpoints are authenticated, and every stop's booked time is honoured. What is
+left in that document is features, in rough priority order. The next ones are
+navigation deep links, logging a run into `fuel_cost_calculations`, and
+stop-order optimisation.
 
 ## Conventions
 

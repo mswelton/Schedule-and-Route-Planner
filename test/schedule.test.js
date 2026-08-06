@@ -151,6 +151,112 @@ test('a single-stop day still returns to base', async () => {
   assert.equal(instantToClock(plan.returnToBase, TZ), '12:15');
 });
 
+test('waits rather than arriving before a booked time', async () => {
+  const { getLeg } = stubLegs({
+    'Sondela Farm->Stop A': { minutes: 20, km: 15 },
+    'Stop A->Stop B': { minutes: 15, km: 12 },
+    'Stop B->Sondela Farm': { minutes: 25, km: 20 },
+  });
+
+  const plan = await buildItinerary({
+    base,
+    stops: [
+      { id: 'a', label: 'Stop A', onSiteMinutes: 30 },
+      // Chaining alone would reach Stop B at 09:45; the client was told 11:00.
+      { id: 'b', label: 'Stop B', onSiteMinutes: 30, scheduledTime: zonedToInstant('2026-08-06', '11:00', TZ) },
+    ],
+    firstAppointment: zonedToInstant('2026-08-06', '09:00', TZ),
+    getLeg,
+  });
+
+  const clock = (ms) => instantToClock(ms, TZ);
+
+  assert.equal(clock(plan.stops[1].arrival), '11:00');
+  assert.equal(plan.stops[1].waitSeconds, 75 * 60);
+  assert.equal(plan.stops[1].lateSeconds, 0);
+  assert.equal(plan.totals.waitingSeconds, 75 * 60);
+  assert.deepEqual(plan.lateStops, []);
+
+  // The wait pushes everything after it, and the day gets longer by exactly
+  // the wait — it is not absorbed anywhere.
+  assert.equal(clock(plan.stops[1].departure), '11:30');
+  assert.equal(clock(plan.returnToBase), '11:55');
+});
+
+test('flags a stop the run cannot reach in time, and does not fake the arrival', async () => {
+  const { getLeg } = stubLegs({
+    'Sondela Farm->Stop A': { minutes: 20, km: 15 },
+    'Stop A->Stop B': { minutes: 45, km: 40 },
+    'Stop B->Sondela Farm': { minutes: 25, km: 20 },
+  });
+
+  const plan = await buildItinerary({
+    base,
+    stops: [
+      { id: 'a', label: 'Stop A', onSiteMinutes: 90 },
+      // 09:00 + 90 on site + 45 drive = 11:15, against a 10:30 booking.
+      { id: 'b', label: 'Stop B', onSiteMinutes: 30, scheduledTime: zonedToInstant('2026-08-06', '10:30', TZ) },
+    ],
+    firstAppointment: zonedToInstant('2026-08-06', '09:00', TZ),
+    getLeg,
+  });
+
+  assert.equal(instantToClock(plan.stops[1].arrival, TZ), '11:15');
+  assert.equal(plan.stops[1].lateSeconds, 45 * 60);
+  assert.equal(plan.stops[1].waitSeconds, 0);
+  assert.equal(plan.totals.waitingSeconds, 0);
+  assert.deepEqual(plan.lateStops, [{ id: 'b', label: 'Stop B', lateSeconds: 45 * 60 }]);
+});
+
+test("the first stop's booked time anchors the day over the passed-in time", async () => {
+  const { getLeg, calls } = stubLegs({
+    'Sondela Farm->Stop A': { minutes: 30, km: 25 },
+    'Stop A->Sondela Farm': { minutes: 30, km: 25 },
+  });
+
+  const plan = await buildItinerary({
+    base,
+    stops: [
+      { id: 'a', label: 'Stop A', onSiteMinutes: 60, scheduledTime: zonedToInstant('2026-08-06', '13:00', TZ) },
+    ],
+    // Deliberately disagrees with the booking — the booking wins.
+    firstAppointment: zonedToInstant('2026-08-06', '09:00', TZ),
+    getLeg,
+  });
+
+  const clock = (ms) => instantToClock(ms, TZ);
+  assert.equal(clock(plan.stops[0].arrival), '13:00');
+  assert.equal(clock(plan.leaveBase), '12:30');
+  assert.equal(clock(plan.returnToBase), '14:30');
+  // The first leg is still priced twice, now against the booked time.
+  assert.equal(clock(calls[0].departureMs), '13:00');
+  assert.equal(clock(calls[1].departureMs), '12:30');
+});
+
+test('stops without a booked time still just chain off the one before', async () => {
+  const { getLeg } = stubLegs({
+    'Sondela Farm->Stop A': { minutes: 20, km: 15 },
+    'Stop A->Stop B': { minutes: 15, km: 12 },
+    'Stop B->Sondela Farm': { minutes: 25, km: 20 },
+  });
+
+  const plan = await buildItinerary({
+    base,
+    stops: [
+      { id: 'a', label: 'Stop A', onSiteMinutes: 30 },
+      { id: 'b', label: 'Stop B', onSiteMinutes: 30 },
+    ],
+    firstAppointment: zonedToInstant('2026-08-06', '09:00', TZ),
+    getLeg,
+  });
+
+  assert.equal(instantToClock(plan.stops[1].arrival, TZ), '09:45');
+  assert.equal(plan.stops[1].bookedFor, null);
+  assert.equal(plan.stops[1].waitSeconds, 0);
+  assert.equal(plan.stops[1].lateSeconds, 0);
+  assert.equal(plan.totals.waitingSeconds, 0);
+});
+
 test('rejects incomplete input', async () => {
   const getLeg = async () => ({ seconds: 0, meters: 0, warnings: [] });
   await assert.rejects(

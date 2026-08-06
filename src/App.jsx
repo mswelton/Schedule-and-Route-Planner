@@ -111,7 +111,7 @@ export default function App() {
     setStops((current) =>
       current.some((s) => s.locationId === locationId)
         ? current
-        : [...current, { locationId, onSiteMinutes: DEFAULT_ON_SITE_MINUTES }]
+        : [...current, { locationId, onSiteMinutes: DEFAULT_ON_SITE_MINUTES, scheduledTime: null }]
     );
   }, []);
 
@@ -136,6 +136,12 @@ export default function App() {
     );
   }, []);
 
+  const setStopScheduledTime = useCallback((index, value) => {
+    setStops((current) =>
+      current.map((stop, i) => (i === index ? { ...stop, scheduledTime: value || null } : stop))
+    );
+  }, []);
+
   const loadFromAppointments = useCallback(async () => {
     setNotice(null);
     setPlanError(null);
@@ -145,16 +151,22 @@ export default function App() {
         setNotice(`No appointments booked for ${date}.`);
         return;
       }
+      // Each location's booked time is carried through, not just the first
+      // one's — that is what stops the itinerary printing an arrival the
+      // client was never told about.
       setStops(
         data.stops.map((s) => ({
           locationId: s.locationId,
           onSiteMinutes: s.onSiteMinutes || DEFAULT_ON_SITE_MINUTES,
+          scheduledTime: s.earliestTime ? s.earliestTime.slice(0, 5) : null,
         }))
       );
       const earliest = data.stops.find((s) => s.earliestTime)?.earliestTime;
       if (earliest) setFirstAppointmentTime(earliest.slice(0, 5));
+      const booked = data.stops.filter((s) => s.earliestTime).length;
       setNotice(
-        `Loaded ${data.stops.length} location${data.stops.length === 1 ? '' : 's'} from the day's appointments — check the order.`
+        `Loaded ${data.stops.length} location${data.stops.length === 1 ? '' : 's'} from the day's appointments` +
+          `${booked ? `, ${booked} with a booked time` : ''} — check the order.`
       );
     } catch (err) {
       setPlanError(err.message);
@@ -245,6 +257,7 @@ export default function App() {
               onReorder={reorderStops}
               onRemove={removeStop}
               onMinutesChange={setStopMinutes}
+              onScheduledTimeChange={setStopScheduledTime}
             />
 
             <button type="button" className="primary plan-button" onClick={handlePlan} disabled={!canPlan}>
