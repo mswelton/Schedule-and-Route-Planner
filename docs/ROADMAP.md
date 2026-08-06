@@ -346,17 +346,30 @@ stores what the plan predicted, so the comparison has one side of it waiting.
 
 ## Tier 3 — infrastructure and polish
 
+CI is **done**. Offline support and the smaller fixes are what remain.
+
 ### 10. No CI
 
-There is no `.github/workflows`. `npm test` passes (13 tests) and nothing runs
-it on a push.
+There was no `.github/workflows`. `npm test` passed and nothing ran it on a
+push.
 
-**Build:** a workflow running `npm test` and `npm run build` on push and PR.
-Extend coverage while in there — `lib/google.js` response parsing and the
-`api/*` handlers have none; `lib/schedule.js` and `lib/time.js` are well
-covered.
+**Done.** `.github/workflows/ci.yml` runs `npm test` and `npm run build` on
+every push and pull request, on Node 20 and 22 — 20 stays in the matrix so a
+Node-22-only API used by accident shows up in CI rather than on an older
+machine.
 
-**Effort:** an hour.
+Coverage went from 36 tests to 53, aimed at the two areas that had none:
+
+- **`test/endpoints.test.js`** walks the `api/` directory rather than naming
+  handlers, and asserts every endpoint except `config` answers 401 without a
+  token — so an endpoint added later that forgets `authenticate()` fails here
+  instead of shipping open. Verified by removing the guard from
+  `api/locations.js` and watching it fail.
+- **`test/fetchleg.test.js`** stubs `globalThis.fetch` and asserts the request
+  body sent to Google: the traffic-aware switch and its one-minute margin, the
+  `departureTime`, duration and distance parsing, warnings including the toll
+  and ignored-restriction advisories, and the key-restriction hint on a
+  rejected key.
 
 ### 11. Offline / PWA
 
@@ -403,8 +416,9 @@ offline is enough — no offline planning.
 | — | Write-back to `appointments` | Declined — the planner suggests, it does not rebook | closed |
 | — | Day-shape guards (2.8) | Would have fired on none of 50 run days | dropped |
 | — | Plan-versus-actual (2.9) | `actual_duration` is a copy of the estimate, not a measurement | dropped |
-| 8 | CI (3.10) | There is none; `npm test` is the whole gate | next |
+| 8 | CI (3.10) | `npm test` is the whole gate and nothing ran it | **done** |
 | 9 | Offline / PWA (3.11) | It is a field tool in patchy coverage | next |
+| 10 | Finish somewhere other than base | Survived the day-shape cull; small | next |
 
 ## Open questions for Mark
 

@@ -34,7 +34,18 @@ The name filter has to go *before* the file list. `npm test -- --test-name-patte
 appends it after the glob, where `node --test` ignores it and silently runs
 everything.
 
-There is no linter and no CI workflow. `npm test` is the whole gate.
+There is no linter. `npm test` plus `npm run build` is the whole gate, and
+`.github/workflows/ci.yml` runs both on every push and PR, on Node 20 and 22.
+
+Two suites are worth knowing about before you add an endpoint:
+
+- **`test/endpoints.test.js` walks the `api/` directory** rather than naming
+  handlers, and asserts every endpoint except `config` answers 401 without a
+  token. A new endpoint that forgets `authenticate()` fails here. If you are
+  adding a genuinely public endpoint, that test is where you say so.
+- **`test/fetchleg.test.js` stubs `globalThis.fetch`** and asserts the request
+  body we send Google — particularly the traffic-aware switch, which decides
+  whether the estimate is predictive or free-flow.
 
 ## Architecture
 
@@ -251,7 +262,7 @@ re-checking the data:
 - **Day-shape guards would never have fired.** Across 50 run days the longest
   span is 7.75 h and no day reaches 8.
 
-What is left is Tier 3: CI (there is none), offline support, and small fixes.
+What is left is Tier 3: offline support and small fixes. CI is done.
 
 One thing outside this repository, flagged there and in the README: the
 `fuel_cost_calculations` policies grant `anon` full read/write/delete

@@ -54,6 +54,10 @@ npm run dev                  # http://localhost:5173
 npm test                     # scheduling + timezone tests
 ```
 
+There is no linter, so `npm test` and `npm run build` are the whole gate.
+GitHub Actions runs both on every push and pull request, on Node 20 and 22 —
+see `.github/workflows/ci.yml`.
+
 `npm run dev` runs the `api/` functions inside the Vite dev server (see the
 `vercelApiDev` plugin in `vite.config.js`), so the local app behaves like the
 deployed one without needing the Vercel CLI. That plugin also loads
