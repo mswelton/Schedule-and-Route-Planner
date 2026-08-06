@@ -114,17 +114,24 @@ unchanged no-booking path.
 
 ## Tier 1 — highest value per line of code
 
+Items 3 and 4 are **built**; 5 and 6 are next.
+
 ### 3. Navigation deep links
 
 The itinerary tells you to leave at 06:40 and then leaves you to type the
 address into your phone. Every stop already has `lat`/`lng` server-side.
 
-**Build:** a **Navigate** link per stop (`https://www.google.com/maps/dir/?api=1&destination=<lat>,<lng>`,
-plus an Apple Maps variant), and one **Open whole day in Google Maps** link
-built from base → stops → base as waypoints. Hidden in print.
+**Done.** A **Navigate** link and an **Apple Maps** link per stop, plus **Open
+the day in Google Maps** in the itinerary header (base → stops → base). Google's
+URL API caps a route at nine waypoints, so a longer run reports which stops did
+not fit rather than dropping them quietly. All hidden in print.
 
-**Effort:** under an hour. Probably the largest day-to-day improvement in this
-document per unit of work.
+Building this turned up a latent bug worth knowing about: `Number(null)` is `0`
+and `0` is a finite latitude, so the `Number.isFinite(Number(row.lat))` check in
+`lib/google.js` would have routed a coordinate-less stop to 0°N 0°E — in the
+Gulf of Guinea — instead of falling through to the documented address geocoding.
+Dormant, since all 17 rows have coordinates, but it meant the fallback path
+could never actually fire. Fixed in both places, with tests.
 
 ### 4. Log the run's fuel cost — the table already exists and is filled in by hand
 
@@ -158,7 +165,22 @@ Worth noting once the numbers are visible: the pricelist carries a flat $10
 that is a pricing question is Mark's call, but the planner is what makes it
 answerable per run.
 
-**Effort:** ~half a day.
+**Done.** `api/fuel-log.js` — `GET` returns the last run's litres/100 km and
+$/litre as defaults, `POST` writes the row. The description and the appointment
+ids are rebuilt server-side from the stop ids, so a logged run always describes
+rows that exist; the distance is the exception, echoed back from a plan this
+server just produced rather than paying for the whole run of Routes calls
+again, and range-checked instead. The cost is shown whether or not it is saved.
+
+**This is the first thing in the app that writes to the practice database.**
+Worth keeping it the only one — see the note at the top of `CLAUDE.md`.
+
+While building it: the `fuel_cost_calculations` policies grant `anon` and
+`authenticated` SELECT/INSERT/UPDATE/DELETE with `USING (true)`. RLS is
+enabled, but nothing is restricted — an earlier note in the README calling this
+resolved was wrong and has been corrected. Tightening it may affect the main
+hoof-tracker app, so it is flagged rather than changed. The planner writes
+through the service-role key and is unaffected either way.
 
 ### 5. Optimise stop order — now a small problem, not a TSP
 
@@ -308,10 +330,10 @@ offline is enough — no offline planning.
 | --- | --- | --- | --- |
 | 1 | Auth on the API (Tier 0.1) | Client PII and a billable key were open | **done** |
 | 2 | Honour booked times (Tier 0.2) | The itinerary could contradict the appointment book | **done** |
-| 3 | Navigation links (1.3) | An hour's work, used on every stop of every run | next |
-| 4 | Fuel cost logging (1.4) | Replaces manual entry with a number already computed | next |
-| 5 | Optimise order (1.5) | Cheap at 3 stops, and the last unbuilt brief item | |
-| 6 | Call reduction + cache (1.6) | Makes 3–5 sensible to iterate on | |
+| 3 | Navigation links (1.3) | An hour's work, used on every stop of every run | **done** |
+| 4 | Fuel cost logging (1.4) | Replaces manual entry with a number already computed | **done** |
+| 5 | Optimise order (1.5) | Cheap at 3 stops, and the last unbuilt brief item | next |
+| 6 | Call reduction + cache (1.6) | Makes 5 sensible to iterate on | next |
 | 7 | Persist plans + write-back (2.7) | Needs the schema conversation started early | |
 
 ## Open questions for Mark

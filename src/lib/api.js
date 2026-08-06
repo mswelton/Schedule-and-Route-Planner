@@ -41,6 +41,19 @@ export function planRoute(payload) {
   });
 }
 
+/** Last-used litres/100 km and $/litre, to prefill the fuel log. */
+export function fetchFuelDefaults() {
+  return request('/api/fuel-log');
+}
+
+export function logFuelCost(payload) {
+  return request('/api/fuel-log', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+}
+
 /** Returns an object URL for the rendered route map, or null if unavailable. */
 export async function fetchRouteMap({ polylines, markers }) {
   const res = await fetch('/api/staticmap', {

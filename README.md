@@ -183,12 +183,35 @@ what to build next, in what order, and why. The two items at the top are
 authenticating the API (it is currently open) and honouring each stop's booked
 appointment time rather than only the first one's.
 
+## Driving the run
+
+Each stop on the itinerary carries **Navigate** (Google Maps) and **Apple Maps**
+links, and the itinerary header has **Open the day in Google Maps** — base, every
+stop in order, back to base. Google's URL API takes nine waypoints, so a longer
+run says which stops did not fit rather than silently dropping them. All of it
+is hidden in print.
+
+## What the run cost
+
+Under the itinerary, **Fuel for this run** turns the computed distance into a
+dollar figure, and **Log this run** records it in `fuel_cost_calculations` —
+the table these numbers were being typed into by hand. Litres per 100 km and
+the fuel price are prefilled from the last run logged and stay editable.
+
+The description is composed the way the existing rows read
+(`Eichhorn - Wonga (Lyric, Charlie); Best Family Farm (…)`), and the run's
+appointment ids are attached. Both are rebuilt server-side from the stop ids,
+so a logged run always describes rows that exist.
+
+This is the **only** thing in the app that writes to the practice database.
+
 ## Not built (from the brief's nice-to-haves)
 
 - **Saving a planned route back to Supabase.** Needs a new table in the
   production database; worth agreeing on the shape first.
 - **"Optimise stop order" (TSP).** Off-by-default reordering was explicitly not
-  needed for v1.
+  needed for v1. Now the next thing on the list — see
+  [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 The map preview and a print view *are* included.
 
@@ -203,6 +226,14 @@ key. Anyone who knows the URL can read or write any table, bypassing RLS.
 Worth putting behind a shared secret or JWT verification, or removing if
 nothing depends on it. Still deployed as of August 2026.
 
-Two items that used to be listed here are resolved: this app's own `api/*`
-endpoints now require a verified Supabase session, and
-`fuel_cost_calculations` has had RLS enabled.
+**`fuel_cost_calculations` is still open to the anon key.** An earlier note here
+said enabling RLS had resolved this. RLS *is* enabled now, but the four
+policies on the table grant `anon` and `authenticated` SELECT, INSERT, UPDATE
+and DELETE with `USING (true)` — so anyone holding the anon key can still read,
+change or delete every row. That is barely different from RLS being off. It
+needs real policies, and tightening them may affect the main hoof-tracker app,
+which is why it is flagged rather than changed here. The planner writes to this
+table through the service-role key and is unaffected either way.
+
+One item that used to be listed here *is* resolved: this app's own `api/*`
+endpoints now require a verified Supabase session.

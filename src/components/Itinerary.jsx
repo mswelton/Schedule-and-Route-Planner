@@ -1,5 +1,7 @@
 import { formatDistance, formatDuration, formatMinutes, formatLongDate } from '../lib/format.js';
+import { googleMapsStopUrl, appleMapsStopUrl, googleMapsDayUrl } from '../lib/navigation.js';
 import RouteMap from './RouteMap.jsx';
+import FuelLog from './FuelLog.jsx';
 
 function Leg({ leg }) {
   if (!leg) return null;
@@ -25,10 +27,29 @@ function Leg({ leg }) {
   );
 }
 
+/** Map links for one stop. Hidden in print — paper cannot be tapped. */
+function Navigate({ stop }) {
+  const google = googleMapsStopUrl(stop);
+  const apple = appleMapsStopUrl(stop);
+  if (!google) return null;
+
+  return (
+    <span className="navigate no-print">
+      <a href={google} target="_blank" rel="noreferrer">
+        Navigate
+      </a>
+      <a href={apple} target="_blank" rel="noreferrer" className="muted">
+        Apple Maps
+      </a>
+    </span>
+  );
+}
+
 export default function Itinerary({ plan }) {
   if (!plan) return null;
 
   const { totals } = plan;
+  const day = googleMapsDayUrl(plan.base, plan.stops);
 
   return (
     <section className="panel itinerary">
@@ -37,10 +58,25 @@ export default function Itinerary({ plan }) {
           <h2>Itinerary</h2>
           <p className="muted small">{formatLongDate(plan.date)}</p>
         </div>
-        <button type="button" className="secondary no-print" onClick={() => window.print()}>
-          Print
-        </button>
+        <div className="itinerary-actions no-print">
+          {day && (
+            <a className="button secondary" href={day.url} target="_blank" rel="noreferrer">
+              Open the day in Google Maps
+            </a>
+          )}
+          <button type="button" className="secondary" onClick={() => window.print()}>
+            Print
+          </button>
+        </div>
       </div>
+
+      {day?.dropped > 0 && (
+        <p className="notice no-print">
+          Google Maps takes nine stops in one route, so the last {day.dropped} on this run{' '}
+          {day.dropped === 1 ? 'is' : 'are'} not in that link — use the per-stop links below for
+          {day.dropped === 1 ? ' it' : ' them'}.
+        </p>
+      )}
 
       <div className="summary">
         <div>
@@ -123,6 +159,7 @@ export default function Itinerary({ plan }) {
               )}
               <span className="on-site">On site {formatMinutes(stop.onSiteMinutes)}</span>
               {stop.accessNotes && <span className="access-note">Access: {stop.accessNotes}</span>}
+              <Navigate stop={stop} />
               <Leg leg={stop.legToNext} />
             </div>
           </li>
@@ -154,6 +191,7 @@ export default function Itinerary({ plan }) {
       )}
 
       <RouteMap plan={plan} />
+      <FuelLog plan={plan} />
     </section>
   );
 }

@@ -123,7 +123,9 @@ export default async function handler(req, res) {
     const response = {
       date,
       timezone: DEFAULT_TIMEZONE,
-      base: itinerary.base,
+      // Coordinates ride along so the client can build map deep links without
+      // re-deriving where the base is.
+      base: { ...itinerary.base, lat: baseLocation.lat, lng: baseLocation.lng },
       leaveBase: { instant: itinerary.leaveBase, clock: clock(itinerary.leaveBase) },
       legToFirstStop: itinerary.legToFirstStop,
       stops: itinerary.stops.map((stop, i) => ({
