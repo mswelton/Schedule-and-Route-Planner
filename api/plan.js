@@ -15,6 +15,7 @@
  */
 
 import { serverSupabase, scopeToUser, formatAddress } from '../lib/supabase.js';
+import { authenticate } from '../lib/auth.js';
 import { fetchLeg } from '../lib/google.js';
 import { buildItinerary } from '../lib/schedule.js';
 import { zonedToInstant, instantToClock, isNextDay, DEFAULT_TIMEZONE } from '../lib/time.js';
@@ -30,6 +31,9 @@ export default async function handler(req, res) {
     res.setHeader('Allow', 'POST');
     return res.status(405).json({ error: 'Method not allowed' });
   }
+
+  const user = await authenticate(req, res);
+  if (!user) return undefined;
 
   const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body || {};
   const { date, firstAppointmentTime, base, stops } = body;
@@ -59,7 +63,8 @@ export default async function handler(req, res) {
         .select(
           'id, location_name, address_line1, address_line2, town_city, county, postcode, latitude, longitude, access_notes'
         )
-        .in('id', ids)
+        .in('id', ids),
+      user.id
     );
     if (error) throw new Error(error.message);
 

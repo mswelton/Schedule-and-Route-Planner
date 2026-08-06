@@ -7,6 +7,7 @@
  */
 
 import { serverSupabase, scopeToUser, formatAddress } from '../lib/supabase.js';
+import { authenticate } from '../lib/auth.js';
 import { DEFAULT_TIMEZONE } from '../lib/time.js';
 
 function toLocation(row) {
@@ -36,6 +37,9 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
+  const user = await authenticate(req, res);
+  if (!user) return undefined;
+
   try {
     const supabase = serverSupabase();
     const query = scopeToUser(
@@ -48,7 +52,8 @@ export default async function handler(req, res) {
           'id, location_name, yard_stable_name, address_line1, address_line2, town_city, county, postcode, latitude, longitude, access_notes, is_home, clients!service_locations_client_id_fkey ( first_name, last_name )'
         )
         .eq('is_archived', false)
-        .order('location_name', { ascending: true })
+        .order('location_name', { ascending: true }),
+      user.id
     );
 
     const { data, error } = await query;

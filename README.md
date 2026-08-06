@@ -61,8 +61,8 @@ none reaches the browser bundle.
 | --- | --- | --- |
 | `SUPABASE_URL` | yes | Project URL |
 | `SUPABASE_SERVICE_ROLE_KEY` | yes | Server-side reads of `service_locations` / `appointments` |
+| `SUPABASE_ANON_KEY` | yes | Verifying access tokens, and served to the browser for sign-in |
 | `GOOGLE_MAPS_API_KEY` | yes | Routes API (legs) and Maps Static API (map preview) |
-| `THC_USER_ID` | no | Scope all queries to one operator's `user_id` |
 | `BASE_ADDRESS` / `BASE_ADDRESS_LABEL` | no | Fallback base if no `is_home` location exists |
 | `PLANNER_TIMEZONE` | no | Defaults to `Australia/Melbourne` |
 
@@ -102,6 +102,20 @@ does not apply to a PR preview deployment, and changing a value requires a
 redeploy before it takes effect. If a key looks correct in the Console but the
 app still rejects it, the deployment you are testing is usually reading a
 different one.
+
+## Signing in
+
+The planner is behind the same Supabase account as the main hoof-tracker app.
+Every `api/*` endpoint verifies the access token the browser sends, and the
+verified user id — not an environment variable — is what scopes the query to
+your rows.
+
+The one exception is `GET /api/config`, which is deliberately public: it hands
+the browser the project URL and anon key so it can run the sign-in flow at all.
+That is the standard publishable pair, and RLS is what protects the data.
+It is served from an endpoint rather than a `VITE_SUPABASE_ANON_KEY` build
+variable so that every value in this project is set in one place — see the note
+above about Vercel scoping variables per environment.
 
 ## Decisions worth knowing about
 
@@ -174,22 +188,15 @@ The map preview and a print view *are* included.
 
 ## Security note
 
-Two things worth acting on:
+One thing left, and it is not in this repository:
 
-1. **This app's own `api/*` endpoints are unauthenticated.** `GET
-   /api/locations` returns every client's name, address and access notes, and
-   `/api/plan` and `/api/staticmap` spend the Google Maps key — none of the
-   handlers checks a session. `THC_USER_ID` scopes rows to one operator; it
-   does not authenticate anyone. This is the first item in
-   [`docs/ROADMAP.md`](docs/ROADMAP.md); until it is fixed, Vercel Deployment
-   Protection is the ten-minute mitigation.
-2. **`db-proxy` is an unauthenticated service-role SQL endpoint.** It is
-   deployed with `verify_jwt: false` and `Access-Control-Allow-Origin: *`, and it
-   forwards an arbitrary `sql` parameter to an `execute_sql` RPC using the
-   service-role key. Anyone who knows the URL can read or write any table,
-   bypassing RLS. Worth putting behind a shared secret or JWT verification, or
-   removing if nothing depends on it. (Pre-existing, not introduced here — and
-   still deployed as of August 2026.)
+**`db-proxy` is an unauthenticated service-role SQL endpoint.** It is deployed
+with `verify_jwt: false` and `Access-Control-Allow-Origin: *`, and it forwards
+an arbitrary `sql` parameter to an `execute_sql` RPC using the service-role
+key. Anyone who knows the URL can read or write any table, bypassing RLS.
+Worth putting behind a shared secret or JWT verification, or removing if
+nothing depends on it. Still deployed as of August 2026.
 
-`fuel_cost_calculations` used to be listed here as having RLS disabled. It is
-now enabled, so that item is resolved.
+Two items that used to be listed here are resolved: this app's own `api/*`
+endpoints now require a verified Supabase session, and
+`fuel_cost_calculations` has had RLS enabled.

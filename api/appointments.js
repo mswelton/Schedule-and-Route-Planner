@@ -7,6 +7,7 @@
  */
 
 import { serverSupabase, scopeToUser } from '../lib/supabase.js';
+import { authenticate } from '../lib/auth.js';
 
 const EXCLUDED_STATUSES = new Set(['cancelled', 'declined', 'no_show']);
 
@@ -15,6 +16,9 @@ export default async function handler(req, res) {
     res.setHeader('Allow', 'GET');
     return res.status(405).json({ error: 'Method not allowed' });
   }
+
+  const user = await authenticate(req, res);
+  if (!user) return undefined;
 
   const date = (req.query?.date || '').toString();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
@@ -31,7 +35,8 @@ export default async function handler(req, res) {
         )
         .eq('scheduled_date', date)
         .not('service_location_id', 'is', null)
-        .order('scheduled_time', { ascending: true, nullsFirst: false })
+        .order('scheduled_time', { ascending: true, nullsFirst: false }),
+      user.id
     );
     if (error) throw new Error(error.message);
 

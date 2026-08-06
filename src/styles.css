@@ -147,7 +147,9 @@ input[type='text'],
 input[type='date'],
 input[type='time'],
 input[type='number'],
-input[type='search'] {
+input[type='search'],
+input[type='email'],
+input[type='password'] {
   font: inherit;
   color: inherit;
   padding: 9px 11px;
@@ -599,6 +601,30 @@ code {
 }
 
 /* ---------- print ---------- */
+
+/* ---------- sign in ---------- */
+
+.signin-page {
+  max-width: 460px;
+}
+
+.signin h2 {
+  margin-top: 0;
+}
+
+.signin form {
+  margin-top: 16px;
+}
+
+.signin button.primary {
+  width: 100%;
+  margin-top: 6px;
+}
+
+.sign-out {
+  margin-left: auto;
+  align-self: center;
+}
 
 @media print {
   body {

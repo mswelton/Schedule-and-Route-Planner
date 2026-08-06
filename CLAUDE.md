@@ -34,8 +34,8 @@ There is no linter and no CI workflow. `npm test` is the whole gate.
 Three layers, and the boundary between them is a security boundary:
 
 - **`api/*.js`** — Vercel serverless functions. The *only* code that sees a key.
-  Four endpoints: `locations` (GET), `appointments` (GET), `plan` (POST),
-  `staticmap` (POST).
+  Five endpoints: `locations` (GET), `appointments` (GET), `plan` (POST),
+  `staticmap` (POST), `config` (GET).
 - **`lib/*.js`** — server-side modules. **Never import these from `src/`.**
   `google.js` holds the Maps key, `supabase.js` holds the service-role key.
 - **`src/`** — the React app. Talks to `/api/*` through `src/lib/api.js` and
@@ -43,7 +43,33 @@ Three layers, and the boundary between them is a security boundary:
   nothing reaches the browser bundle.
 
 `src/lib/` (client) and `lib/` (server) are different directories with similar
-names. Check which one you are editing.
+names. Check which one you are editing. `lib/auth.js` (verifies tokens) and
+`src/lib/auth.js` (runs the sign-in) are the pair most easily confused.
+
+### Authentication
+
+Every endpoint that reads practice data or spends the Maps key is behind a
+verified Supabase session. A handler's first two lines are:
+
+```js
+const user = await authenticate(req, res);
+if (!user) return undefined;   // authenticate() has already sent the 401
+```
+
+and `user.id` is then passed to `scopeToUser(query, userId)`. That scoping is
+mandatory — `scopeToUser` throws without an id, so there is no unscoped path to
+fall into. The old `THC_USER_ID` env var is gone: scoping is enforced by the
+server, not configured by a deployment.
+
+**`GET /api/config` is the one deliberately public endpoint.** It serves the
+Supabase URL and anon key so the browser can sign in at all. That pair is
+publishable by design — RLS protects the data — but nothing else may be added
+to that response. It exists instead of a `VITE_SUPABASE_ANON_KEY` build
+variable so every value in this project is set in one server-side place; if you
+are tempted to "simplify" it into a `VITE_` variable, that is the reason not to.
+
+Tokens are verified by calling Supabase rather than decoding the JWT locally,
+which costs a round trip but survives a JWT secret rotation.
 
 ### The scheduling model
 
@@ -140,18 +166,13 @@ overridden it. "Reset to default" clears the key.
 
 ## Known gaps
 
-`docs/ROADMAP.md` is the prioritised plan. Two items in it are things the app
-gets wrong today, not features:
+`docs/ROADMAP.md` is the prioritised plan. One item in it is a thing the app
+gets wrong today, not a missing feature:
 
-1. **The `api/*` endpoints have no authentication.** `/api/locations` returns
-   every client's name, address and access notes; `/api/plan` and
-   `/api/staticmap` spend the Maps key. `THC_USER_ID` scopes rows to one
-   operator — it does not authenticate anyone.
-2. **Booked appointment times are discarded for every stop but the first.**
-   `api/appointments.js` returns `earliestTime` per location; `App.jsx` uses it
-   only to set the anchor and then drops it. The itinerary can therefore print
-   an arrival that contradicts what the client was told, with nothing flagging
-   it.
+**Booked appointment times are discarded for every stop but the first.**
+`api/appointments.js` returns `earliestTime` per location; `App.jsx` uses it
+only to set the anchor and then drops it. The itinerary can therefore print an
+arrival that contradicts what the client was told, with nothing flagging it.
 
 ## Conventions
 

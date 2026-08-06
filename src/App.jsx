@@ -3,7 +3,9 @@ import DaySettings from './components/DaySettings.jsx';
 import LocationPicker from './components/LocationPicker.jsx';
 import StopList from './components/StopList.jsx';
 import Itinerary from './components/Itinerary.jsx';
+import SignIn from './components/SignIn.jsx';
 import { fetchLocations, fetchAppointments, planRoute } from './lib/api.js';
+import { supabaseClient, signOut } from './lib/auth.js';
 import { todayIso } from './lib/format.js';
 
 const DEFAULT_ON_SITE_MINUTES = 45;
@@ -25,6 +27,12 @@ function loadBaseOverride() {
 }
 
 export default function App() {
+  // `undefined` while we are still working out whether there is a session;
+  // `null` once we know there isn't one. The three states are distinct so the
+  // sign-in form doesn't flash up on every reload before the session loads.
+  const [session, setSession] = useState(undefined);
+  const [configError, setConfigError] = useState(null);
+
   const [locations, setLocations] = useState([]);
   const [defaultBase, setDefaultBase] = useState(null);
   const [timezone, setTimezone] = useState('');
@@ -43,6 +51,34 @@ export default function App() {
   const [notice, setNotice] = useState(null);
 
   useEffect(() => {
+    let subscription = null;
+    let cancelled = false;
+
+    supabaseClient()
+      .then(async (supabase) => {
+        const { data } = await supabase.auth.getSession();
+        if (cancelled) return;
+        setSession(data.session ?? null);
+        subscription = supabase.auth.onAuthStateChange((_event, next) => {
+          setSession(next ?? null);
+        }).data.subscription;
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setConfigError(err.message);
+        setSession(null);
+      });
+
+    return () => {
+      cancelled = true;
+      subscription?.unsubscribe();
+    };
+  }, []);
+
+  // Locations are practice data, so this waits for a session rather than
+  // firing on mount and failing with a 401.
+  useEffect(() => {
+    if (!session) return;
     fetchLocations()
       .then((data) => {
         setLocations(data.locations);
@@ -52,7 +88,7 @@ export default function App() {
         if (!loadBaseOverride() && data.defaultBase) setBase(data.defaultBase);
       })
       .catch((err) => setLoadError(err.message));
-  }, []);
+  }, [session]);
 
   /**
    * Persist only genuine overrides; picking "reset to default" clears the
@@ -143,6 +179,9 @@ export default function App() {
   const hasBase = Boolean(base.address) || (Number.isFinite(base.lat) && Number.isFinite(base.lng));
   const canPlan = stops.length > 0 && hasBase && !planning;
 
+  if (session === undefined) return <p className="app muted">Loading…</p>;
+  if (!session) return <SignIn configError={configError} />;
+
   return (
     <div className="app">
       <header className="app-header no-print">
@@ -151,6 +190,9 @@ export default function App() {
           <h1>Route Planner</h1>
           <p className="muted small">Turn a day's stops into a timed itinerary.</p>
         </div>
+        <button type="button" className="link sign-out" onClick={signOut}>
+          Sign out
+        </button>
       </header>
 
       {loadError && (
