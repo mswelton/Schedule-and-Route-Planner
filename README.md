@@ -118,7 +118,7 @@ builder rather than hand-assembled PostgREST strings, one fewer hop, and no
 dependency on an endpoint this app doesn't own. See the security note below for
 the other reason.
 
-**Coordinates over geocoding.** All 15 current `service_locations` rows have
+**Coordinates over geocoding.** All 17 active `service_locations` rows have
 `latitude`/`longitude`, so legs are computed from stored coordinates. Rows
 without them fall back to the composed address string, which the Routes API
 geocodes itself; the picker tags those rows `no lat/lng` and the itinerary lists
@@ -156,6 +156,13 @@ test/            node:test suites for the scheduling and timezone logic
 `lib/schedule.js` takes the leg fetcher as an argument, so the scheduling rules
 are tested against stubbed legs with no network involved.
 
+## What's next
+
+[`docs/ROADMAP.md`](docs/ROADMAP.md) is the prioritised enhancement plan —
+what to build next, in what order, and why. The two items at the top are
+authenticating the API (it is currently open) and honouring each stop's booked
+appointment time rather than only the first one's.
+
 ## Not built (from the brief's nice-to-haves)
 
 - **Saving a planned route back to Supabase.** Needs a new table in the
@@ -167,17 +174,22 @@ The map preview and a print view *are* included.
 
 ## Security note
 
-Two things worth acting on, both pre-existing and neither introduced here:
+Two things worth acting on:
 
-1. **`db-proxy` is an unauthenticated service-role SQL endpoint.** It is
+1. **This app's own `api/*` endpoints are unauthenticated.** `GET
+   /api/locations` returns every client's name, address and access notes, and
+   `/api/plan` and `/api/staticmap` spend the Google Maps key — none of the
+   handlers checks a session. `THC_USER_ID` scopes rows to one operator; it
+   does not authenticate anyone. This is the first item in
+   [`docs/ROADMAP.md`](docs/ROADMAP.md); until it is fixed, Vercel Deployment
+   Protection is the ten-minute mitigation.
+2. **`db-proxy` is an unauthenticated service-role SQL endpoint.** It is
    deployed with `verify_jwt: false` and `Access-Control-Allow-Origin: *`, and it
    forwards an arbitrary `sql` parameter to an `execute_sql` RPC using the
    service-role key. Anyone who knows the URL can read or write any table,
    bypassing RLS. Worth putting behind a shared secret or JWT verification, or
-   removing if nothing depends on it.
-2. **`fuel_cost_calculations` has RLS disabled**, so it is readable and writable
-   by anyone holding the anon key. Enabling it needs policies added at the same
-   time, or all access breaks:
-   ```sql
-   ALTER TABLE public.fuel_cost_calculations ENABLE ROW LEVEL SECURITY;
-   ```
+   removing if nothing depends on it. (Pre-existing, not introduced here — and
+   still deployed as of August 2026.)
+
+`fuel_cost_calculations` used to be listed here as having RLS disabled. It is
+now enabled, so that item is resolved.
