@@ -114,7 +114,7 @@ unchanged no-booking path.
 
 ## Tier 1 — highest value per line of code
 
-Items 3 and 4 are **built**; 5 and 6 are next.
+All four are **built**. Tier 2 is next.
 
 ### 3. Navigation deep links
 
@@ -202,7 +202,20 @@ Two things to get right:
   re-run the existing per-leg pricing on the new order.
 - Stops with a booked time (item 2) are pinned and must not be reordered.
 
-**Effort:** ~1 day.
+**Done**, with one honest limitation. `api/optimise.js` makes two
+traffic-unaware calls — the current order and the optimised one — so both are
+measured under the same conditions, and reports the difference. Nothing moves
+until Mark presses **Use this order**, and the itinerary is still timed by
+`api/plan.js` re-pricing every leg at the time it is actually driven.
+
+The limitation is the pinning constraint above: Google's `optimizeWaypointOrder`
+reorders *all* the intermediates or none, so there is no way to hold a booked
+stop in place while shuffling the rest. Rather than pretend, the feature is
+**refused outright when any stop has a booked time**, saying which. That turns
+out to fit the workflow — the useful moment for reordering is before the day is
+booked, when Mark is deciding what order to offer. Doing better would mean
+solving a constrained scheduling problem rather than asking Google for a
+route.
 
 ### 6. Cut Routes API calls, and cache them
 
@@ -221,8 +234,29 @@ produces identical legs.
 - Keep the deliberate double-call on the first leg. It is documented, it is
   correct, and it is the number Mark acts on.
 
-**Effort:** ~1 day. Pays for itself in Maps billing and makes the button feel
-instant.
+**Done — the caching half.** `lib/legcache.js` keys legs on where the two
+places are plus a 15-minute departure bucket, with a ten-minute life so no run
+is planned on a stale traffic estimate. Measured on a three-stop day: four
+plans cost **8 Routes calls instead of 21**, and re-planning an unchanged day
+costs none. The first leg is still fetched twice; the cache sits underneath
+`buildItinerary`, which is unaware of it.
+
+The key is built from coordinates and address rather than ids, because the base
+is always id `base` even when Mark types a different address over it — keying
+on the id would serve him the previous base's drive times. There is a test for
+exactly that.
+
+It is in-memory rather than a table: no schema in a database this app does not
+own, and the case it exists for happens inside one warm serverless instance. A
+cold start pays full price, which is the behaviour we had before.
+
+**Not done: concurrent leg fetching.** On reflection it is the wrong trade.
+Arrival times chain, so fetching legs in parallel means a first pass at
+estimated departure times and a second to correct them — which *adds* calls in
+exchange for latency, against a plan that now mostly hits cache anyway. The
+sequential loop also keeps "every leg is priced at the departure time it is
+actually driven at" obviously true by construction, which is worth more than a
+second of wall clock.
 
 ---
 
@@ -332,9 +366,9 @@ offline is enough — no offline planning.
 | 2 | Honour booked times (Tier 0.2) | The itinerary could contradict the appointment book | **done** |
 | 3 | Navigation links (1.3) | An hour's work, used on every stop of every run | **done** |
 | 4 | Fuel cost logging (1.4) | Replaces manual entry with a number already computed | **done** |
-| 5 | Optimise order (1.5) | Cheap at 3 stops, and the last unbuilt brief item | next |
-| 6 | Call reduction + cache (1.6) | Makes 5 sensible to iterate on | next |
-| 7 | Persist plans + write-back (2.7) | Needs the schema conversation started early | |
+| 5 | Optimise order (1.5) | Cheap at 3 stops, and the last unbuilt brief item | **done** |
+| 6 | Call reduction + cache (1.6) | Makes 5 sensible to iterate on | **done** (cache) |
+| 7 | Persist plans + write-back (2.7) | Needs the schema conversation started early | next |
 
 ## Open questions for Mark
 

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import DaySettings from './components/DaySettings.jsx';
 import LocationPicker from './components/LocationPicker.jsx';
 import StopList from './components/StopList.jsx';
+import OptimiseOrder from './components/OptimiseOrder.jsx';
 import Itinerary from './components/Itinerary.jsx';
 import SignIn from './components/SignIn.jsx';
 import { fetchLocations, fetchAppointments, planRoute } from './lib/api.js';
@@ -136,6 +137,20 @@ export default function App() {
     );
   }, []);
 
+  /**
+   * Reorder the list to match a suggested order, keeping each stop's own
+   * settings. Anything the suggestion doesn't mention stays on the end rather
+   * than being dropped.
+   */
+  const applyOrder = useCallback((locationIds) => {
+    setStops((current) => {
+      const byId = new Map(current.map((stop) => [stop.locationId, stop]));
+      const reordered = locationIds.map((id) => byId.get(id)).filter(Boolean);
+      const untouched = current.filter((stop) => !locationIds.includes(stop.locationId));
+      return [...reordered, ...untouched];
+    });
+  }, []);
+
   const setStopScheduledTime = useCallback((index, value) => {
     setStops((current) =>
       current.map((stop, i) => (i === index ? { ...stop, scheduledTime: value || null } : stop))
@@ -258,6 +273,13 @@ export default function App() {
               onRemove={removeStop}
               onMinutesChange={setStopMinutes}
               onScheduledTimeChange={setStopScheduledTime}
+            />
+
+            <OptimiseOrder
+              base={base}
+              stops={stops}
+              onApply={applyOrder}
+              disabled={planning || !hasBase}
             />
 
             <button type="button" className="primary plan-button" onClick={handlePlan} disabled={!canPlan}>

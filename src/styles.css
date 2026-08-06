@@ -629,6 +629,31 @@ code {
 
 /* ---------- print ---------- */
 
+/* ---------- stop order ---------- */
+
+.optimise,
+.optimise-note {
+  margin-top: 14px;
+}
+
+.optimise-result {
+  margin-top: 12px;
+  padding: 12px 14px;
+  background: var(--offwhite);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.optimise-result p:first-child {
+  margin-top: 0;
+}
+
+.optimise-order {
+  margin: 10px 0;
+  padding-left: 20px;
+  font-size: 14px;
+}
+
 /* ---------- navigation links + fuel log ---------- */
 
 .itinerary-actions {
