@@ -194,12 +194,38 @@ what to build next, in what order, and why. The two items at the top are
 authenticating the API (it is currently open) and honouring each stop's booked
 appointment time rather than only the first one's.
 
+## History
+
+**History** in the header (`#/history`) is where past runs and fuel entries are
+reviewed and corrected.
+
+**Saved runs** — every run you have saved, with distance, driving time and day
+length. **Open** shows it as it was worked out and puts the day back in the
+editor; **Delete** removes it.
+
+**Fuel** — every logged run grouped by month, with the month's distance and
+cost, and the total across everything. Any entry can be edited: change the
+date, distance, litres per 100 km, price or description, and the litres, cost
+and cost per km are worked out again on the server when you save.
+
+Two things worth knowing about the fuel list. It shows **the whole practice's
+history**, including the entries typed in by hand before this app existed —
+`fuel_cost_calculations` has no owner column, so there is no way to show only
+this app's rows. And because the main Hoof Clinic app reads the same table,
+deleting here removes the row for that app too, which is why the confirmation
+names the entry.
+
 ## Saving a run
 
 **Save this run** keeps the itinerary, and saved runs are listed on the left.
 Opening one shows it exactly as it was worked out — no Routes API calls — and
 puts the day back in the editor, so a past run can be adjusted and re-planned
 rather than only read.
+
+With a saved run open, the button reads **Update saved run**: adjusting and
+re-planning replaces that run rather than leaving two entries for the same day.
+**Save as a new run** is there for when a second version is what you actually
+want.
 
 This needs one table, `route_plans`, which does not exist until you apply
 [`docs/migrations/001_create_route_plans.sql`](docs/migrations/001_create_route_plans.sql)

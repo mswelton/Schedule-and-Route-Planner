@@ -58,6 +58,19 @@ export function saveRun(plan) {
   });
 }
 
+/** Replace a saved run in place, rather than adding a near-duplicate. */
+export function updateSavedRun(id, plan) {
+  return request(`/api/plans?id=${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ plan }),
+  });
+}
+
+export function deleteSavedRun(id) {
+  return request(`/api/plans?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+}
+
 /** Compares the current stop order against Google's best; changes nothing. */
 export function optimiseOrder(payload) {
   return request('/api/optimise', {
@@ -78,6 +91,23 @@ export function logFuelCost(payload) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
+}
+
+/** Every logged run, for the History screen. */
+export function fetchFuelHistory() {
+  return request('/api/fuel-log?history=1');
+}
+
+export function updateFuelEntry(id, payload) {
+  return request(`/api/fuel-log?id=${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteFuelEntry(id) {
+  return request(`/api/fuel-log?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
 }
 
 /** Returns an object URL for the rendered route map, or null if unavailable. */

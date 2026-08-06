@@ -41,8 +41,10 @@ Two suites are worth knowing about before you add an endpoint:
 
 - **`test/endpoints.test.js` walks the `api/` directory** rather than naming
   handlers, and asserts every endpoint except `config` answers 401 without a
-  token. A new endpoint that forgets `authenticate()` fails here. If you are
-  adding a genuinely public endpoint, that test is where you say so.
+  token — on *every* verb it accepts, not just the first. A new endpoint that
+  forgets `authenticate()`, or an existing one that guards `GET` but not
+  `DELETE`, fails here. If you are adding a genuinely public endpoint, that
+  test is where you say so.
 - **`test/fetchleg.test.js` stubs `globalThis.fetch`** and asserts the request
   body we send Google — particularly the traffic-aware switch, which decides
   whether the estimate is predictive or free-flow.
@@ -53,8 +55,8 @@ Three layers, and the boundary between them is a security boundary:
 
 - **`api/*.js`** — Vercel serverless functions. The *only* code that sees a key.
   Eight endpoints: `locations` (GET), `appointments` (GET), `plan` (POST),
-  `staticmap` (POST), `config` (GET), `fuel-log` (GET/POST), `optimise` (POST),
-  `plans` (GET/POST — saved runs).
+  `staticmap` (POST), `config` (GET), `optimise` (POST),
+  `fuel-log` (GET/POST/PUT/DELETE), `plans` (GET/POST/PUT/DELETE — saved runs).
 - **`lib/*.js`** — server-side modules. **Never import these from `src/`.**
   `google.js` holds the Maps key, `supabase.js` holds the service-role key.
 - **`src/`** — the React app. Talks to `/api/*` through `src/lib/api.js` and
@@ -153,6 +155,28 @@ response as `jsonb`. Reopening renders the stored itinerary — no Routes API
 calls — and puts the day back in the editor so it can be adjusted and
 re-planned.
 
+**Re-planning an open run updates that row** (`PUT /api/plans?id=`) rather than
+inserting a second one. `App` holds `openRunId` for exactly this, and it
+survives a re-plan on purpose. Without it the table fills with near-duplicates
+of the same day — not hypothetical, `fuel_cost_calculations` carries two
+identical 2026-07-25 rows written eight seconds apart.
+
+### The History screen
+
+`#/history` — hash routing, because two screens is not a router's worth of
+problem. It holds saved runs and fuel entries, both editable.
+
+**`fuel_cost_calculations` has no `user_id` column**, so nothing about the fuel
+history can be scoped: it is the practice's, and it includes rows the main app
+wrote by hand before this app existed. Editing or deleting there changes data
+the main app also reads, which is why the delete confirm names the row. This
+was decided with Mark rather than assumed — do not "fix" it by adding a
+`user_id` column, which would hide every row the main app writes.
+
+**The derived fuel figures are recomputed server-side on every write.**
+`lib/fuel.js` is pure and holds that arithmetic so the insert and update paths
+cannot drift; a client-supplied `trip_cost` is never trusted.
+
 **Migrations live in `docs/migrations/` and are applied by hand** in the
 Supabase SQL editor. There is no migration runner, and this app is a guest in
 that database. `api/plans.js` detects Postgres' `42P01` and says which file to
@@ -197,6 +221,10 @@ That plugin also loads `.env.local` into `process.env`, because Vite exposes
 only `VITE_`-prefixed variables and only on `import.meta.env` — the handlers are
 ordinary Node code reading `process.env` and would otherwise see nothing in dev.
 A real shell variable wins over the file.
+
+It parses request bodies for `POST`, `PUT`, `PATCH` and `DELETE`. It used to do
+only the first two, which meant a `PATCH` body arrived as `undefined` in dev and
+looked like a handler bug.
 
 ## Things that will bite you
 

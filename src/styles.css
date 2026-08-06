@@ -629,6 +629,104 @@ code {
 
 /* ---------- print ---------- */
 
+/* ---------- history ---------- */
+
+.header-actions {
+  margin-left: auto;
+  align-self: center;
+  display: flex;
+  gap: 14px;
+}
+
+.history-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.history-month {
+  margin-bottom: 18px;
+}
+
+.history-month h3 {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  margin: 0 0 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--line);
+  font-size: 15px;
+}
+
+.fuel-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.fuel-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 10px 12px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.fuel-row.editing {
+  display: block;
+  background: var(--offwhite);
+}
+
+.fuel-row-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.fuel-row-cost {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  white-space: nowrap;
+}
+
+.fuel-row-cost strong {
+  font-size: 17px;
+}
+
+.row-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.danger-link {
+  color: #b23c38;
+}
+
+/* Stacked on a phone: three columns in a row this dense is unreadable. */
+@media (max-width: 640px) {
+  .fuel-row {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .fuel-row-cost {
+    align-items: flex-start;
+    flex-direction: row;
+    gap: 8px;
+    align-items: baseline;
+  }
+}
+
 /* ---------- saved runs ---------- */
 
 .saved-runs {

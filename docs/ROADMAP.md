@@ -404,6 +404,9 @@ offline is enough — no offline planning.
 
 ## Tier 4 — reviewing and correcting what has been recorded
 
+**Built.** The plan below is kept as written, because the reasoning is the
+record of why it works this way. What actually shipped is noted at the end.
+
 Everything so far writes records and never looks back at them. Two things are
 now accumulating — saved runs and fuel entries — and neither can be reviewed
 properly or corrected when it is wrong.
@@ -490,7 +493,9 @@ exactly what the fuel table already demonstrates can happen.
 
 **No audit trail.** An edit overwrites. For a single operator correcting their
 own typos that is proportionate, but it does mean a wrong edit cannot be undone
-from the app.
+from the app. `updated_at` was **not** added in the end — it would have meant a
+second hand-applied migration for a marginal gain, and `created_at` already
+answers "when was this run recorded".
 
 **The weak RLS on `fuel_cost_calculations` matters more now.** Its policies
 grant `anon` full `SELECT/INSERT/UPDATE/DELETE` with `USING (true)`. This work
@@ -498,6 +503,24 @@ does not change that, and the planner reaches the table through the
 service-role key either way — but putting a delete button in front of a table
 anyone with the anon key can already empty is a good moment to fix the policies
 in the hoof-tracker project.
+
+### What shipped
+
+All of the above, plus two things worth recording.
+
+**The `updated_at` migration was dropped**, as noted. No second hand-applied
+migration was needed for any of this — `route_plans` was already right.
+
+**The verb guard in `test/endpoints.test.js` was the more valuable half of the
+test work.** It now tries `GET`, `POST`, `PUT` and `DELETE` against every
+handler rather than stopping at the first one that answers, because an endpoint
+that guards `GET` but not `DELETE` is exactly the failure worth catching. It
+was checked by removing the guard from `DELETE /api/plans` and watching the
+suite go red, rather than trusting a green run.
+
+Both traps flagged in the plan were real and are fixed: the dev-server shim now
+parses bodies for `PATCH` and `DELETE` too, and the verb guard covers the new
+methods.
 
 ---
 
@@ -516,7 +539,7 @@ in the hoof-tracker project.
 | — | Day-shape guards (2.8) | Would have fired on none of 50 run days | dropped |
 | — | Plan-versus-actual (2.9) | `actual_duration` is a copy of the estimate, not a measurement | dropped |
 | 8 | CI (3.10) | `npm test` is the whole gate and nothing ran it | **done** |
-| 9 | History view (4.13–15) | Two records accumulating, neither reviewable or correctable | **planned, next** |
+| 9 | History view (4.13–15) | Two records accumulating, neither reviewable or correctable | **done** |
 | 10 | Offline / PWA (3.11) | It is a field tool in patchy coverage | next |
 | 11 | Finish somewhere other than base | Survived the day-shape cull; small | next |
 
@@ -534,8 +557,10 @@ in the hoof-tracker project.
    settings.
 5. **`updated_at` on `fuel_cost_calculations`** — adding it would let an edited
    row be told from an original. Additive and safe, but that table belongs to
-   the main app, so it is a question rather than an assumption.
+   the main app, so it is a question rather than an assumption. Still open;
+   nothing built so far needs it.
 6. **Manual fuel entries** — should the History screen let a run be added by
-   hand, for a day that was driven but never planned? Not in the plan above;
-   easy to add if the 15 hand-entered rows represent an ongoing habit rather
-   than history.
+   hand, for a day that was driven but never planned? Still open. Everything
+   for it now exists apart from the form: the endpoint validates and computes
+   the figures already, and would need only the description and date from a
+   human instead of from a plan.
