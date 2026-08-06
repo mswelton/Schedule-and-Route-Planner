@@ -41,6 +41,15 @@ export function planRoute(payload) {
   });
 }
 
+/** Compares the current stop order against Google's best; changes nothing. */
+export function optimiseOrder(payload) {
+  return request('/api/optimise', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+}
+
 /** Last-used litres/100 km and $/litre, to prefill the fuel log. */
 export function fetchFuelDefaults() {
   return request('/api/fuel-log');

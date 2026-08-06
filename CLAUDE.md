@@ -38,8 +38,8 @@ There is no linter and no CI workflow. `npm test` is the whole gate.
 Three layers, and the boundary between them is a security boundary:
 
 - **`api/*.js`** — Vercel serverless functions. The *only* code that sees a key.
-  Six endpoints: `locations` (GET), `appointments` (GET), `plan` (POST),
-  `staticmap` (POST), `config` (GET), `fuel-log` (GET/POST).
+  Seven endpoints: `locations` (GET), `appointments` (GET), `plan` (POST),
+  `staticmap` (POST), `config` (GET), `fuel-log` (GET/POST), `optimise` (POST).
 - **`lib/*.js`** — server-side modules. **Never import these from `src/`.**
   `google.js` holds the Maps key, `supabase.js` holds the service-role key.
 - **`src/`** — the React app. Talks to `/api/*` through `src/lib/api.js` and
@@ -114,6 +114,37 @@ Two consequences worth knowing before you change anything here:
 Planning a run in the past (or within the next minute) falls back to
 traffic-unaware routing, since the Routes API rejects past departure times. The
 itinerary labels those legs.
+
+### Two ways of talking to the Routes API, and why
+
+- **`fetchLeg()`** prices one leg at one departure time. This is what builds the
+  itinerary, via `buildItinerary`.
+- **`fetchRunOverview()`** prices a whole run in one call and can let Google
+  reorder the stops (`optimizeWaypointOrder`). It backs `api/optimise.js` and
+  exists **only to compare orderings**. Never build an itinerary from it: a
+  multi-waypoint route assumes you drive straight through, so it knows nothing
+  about the 45 minutes at each property and prices every leg at the wrong time
+  of day. Once an order is chosen, the legs are re-priced with `fetchLeg`.
+
+`api/optimise.js` suggests an order and changes nothing; applying it is a
+separate click. It is refused when any stop has a booked time — reordering
+those would break times clients have already been given.
+
+### Leg caching
+
+`lib/legcache.js` wraps `fetchLeg` in `api/plan.js`. Legs are keyed on where
+the two places are (**not** their ids — the base is always id `base` even when
+the address is typed over) plus a 15-minute departure bucket, and expire after
+ten minutes so no run is planned on a stale traffic estimate.
+
+It is in-memory on purpose: no schema in a database this app does not own, and
+the case it exists for — pressing the button again after nudging a stop's time
+on site — happens inside one warm instance. A cold start pays full price, which
+is what happened before it existed. Measured on a three-stop day: four plans
+cost 8 Routes calls instead of 21, and re-planning an unchanged day costs none.
+
+`buildItinerary` is unaware of any of this and still asks for every leg,
+including the first one twice.
 
 ### Time handling
 
@@ -191,9 +222,10 @@ overridden it. "Reset to default" clears the key.
 ## Known gaps
 
 `docs/ROADMAP.md` is the prioritised plan and tracks what is built. Tier 0 (the
-two things the app got *wrong*) and the first two Tier 1 items (navigation deep
-links, fuel-cost logging) are done. Next up are stop-order optimisation and
-cutting the `stops + 2` Routes API calls per plan.
+two things the app got *wrong*) and all of Tier 1 are done. What is left is
+Tier 2 and 3: persisting plans and writing times back to `appointments` (needs
+a schema agreed first), day-shape guards, plan-versus-actual, CI, and offline
+support.
 
 One thing outside this repository, flagged there and in the README: the
 `fuel_cost_calculations` policies grant `anon` full read/write/delete

@@ -21,6 +21,7 @@
 import { serverSupabase, scopeToUser, formatAddress } from '../lib/supabase.js';
 import { authenticate } from '../lib/auth.js';
 import { fetchLeg } from '../lib/google.js';
+import { legCache } from '../lib/legcache.js';
 import { buildItinerary } from '../lib/schedule.js';
 import { zonedToInstant, instantToClock, isNextDay, DEFAULT_TIMEZONE } from '../lib/time.js';
 
@@ -114,7 +115,14 @@ export default async function handler(req, res) {
       base: baseLocation,
       stops: orderedStops,
       firstAppointment,
-      getLeg: (origin, destination, departureMs) => fetchLeg(origin, destination, departureMs),
+      // Cached by origin, destination and a 15-minute departure bucket, so
+      // re-planning the same day after adjusting time on site mostly does not
+      // pay for the same legs again. buildItinerary still asks for every leg —
+      // including the first one twice, deliberately — and is unaware of this.
+      getLeg: (origin, destination, departureMs) =>
+        legCache.fetch(origin, destination, departureMs, () =>
+          fetchLeg(origin, destination, departureMs)
+        ),
     });
 
     // Attach display-ready wall-clock strings so the browser never has to

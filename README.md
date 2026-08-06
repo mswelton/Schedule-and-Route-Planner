@@ -38,6 +38,13 @@ leave time. That's the number you act on, so it's worth the extra call.
 Planning a run in the past (or within the next minute) silently falls back to
 traffic-unaware routing, which the itinerary labels.
 
+Legs are cached for ten minutes, keyed on the two places and a 15-minute
+departure bucket, so pressing the button again after adjusting a stop's time on
+site does not pay for the whole run of calls a second time. On a three-stop
+day, four plans cost 8 Routes API calls rather than 21, and re-planning an
+unchanged day costs none. The cache lives in memory in the serverless function,
+so a cold start pays full price.
+
 ## Setup
 
 ```bash
@@ -183,6 +190,23 @@ what to build next, in what order, and why. The two items at the top are
 authenticating the API (it is currently open) and honouring each stop's booked
 appointment time rather than only the first one's.
 
+## Picking the order
+
+With three or more stops and none of them booked for a time, **Try a better
+order** compares the list against the best order Google can find and reports
+what the difference is worth — *"saves 12 km and 18 min of driving"* — with the
+suggested order written out. Nothing moves until you press **Use this order**,
+and that only reorders the list; the run is still timed by **Work out my day**.
+
+It is unavailable once a stop carries a booked time, because reordering those
+would break times clients have already been given. The useful moment for it is
+before the day is booked, when you are deciding what order to offer.
+
+The comparison is two traffic-unaware calls, so both orders are measured under
+the same conditions. It is never used to time the run: a multi-waypoint route
+assumes you drive straight through and knows nothing about the time spent at
+each property.
+
 ## Driving the run
 
 Each stop on the itinerary carries **Navigate** (Google Maps) and **Apple Maps**
@@ -209,11 +233,8 @@ This is the **only** thing in the app that writes to the practice database.
 
 - **Saving a planned route back to Supabase.** Needs a new table in the
   production database; worth agreeing on the shape first.
-- **"Optimise stop order" (TSP).** Off-by-default reordering was explicitly not
-  needed for v1. Now the next thing on the list — see
-  [`docs/ROADMAP.md`](docs/ROADMAP.md).
-
-The map preview and a print view *are* included.
+The map preview and a print view *are* included. Off-by-default stop reordering
+was the other item here; it is built now — see "Picking the order" above.
 
 ## Security note
 
