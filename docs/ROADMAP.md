@@ -402,6 +402,105 @@ offline is enough — no offline planning.
 
 ---
 
+## Tier 4 — reviewing and correcting what has been recorded
+
+Everything so far writes records and never looks back at them. Two things are
+now accumulating — saved runs and fuel entries — and neither can be reviewed
+properly or corrected when it is wrong.
+
+There is already a concrete case: `fuel_cost_calculations` holds **two
+identical rows** for 2026-07-25 ("The Ridge (Mars)", 148 km), created eight
+seconds apart. A double-submit, predating the planner, that nothing in either
+app can currently clean up.
+
+State as of 2026-08-07: 21 fuel rows spanning March to August, 15 of them
+hand-entered before the planner existed. `route_plans` exists but is empty —
+the table was migrated, and nothing has been saved to it yet.
+
+### 13. A History view
+
+**Decided with Mark:** a separate screen, reached from the header, holding both
+histories. The planning page is already five panels deep on one column; the
+tables need room to be readable on a phone, and reviewing is a different job
+from planning.
+
+The existing **Saved runs** panel stays where it is for quick reopening. The
+History screen is where the fuller reviewing and correcting happens.
+
+Navigation is two views, so this does not justify a router dependency. Hash
+routing (`#/history`) in about fifteen lines gets the back button and a
+linkable URL for free.
+
+### 14. Fuel history — review and edit
+
+**Decided with Mark: all rows, fully editable.** The table is shared with the
+main hoof-tracker app and **cannot be scoped** — `fuel_cost_calculations` has
+no `user_id` column, so there is no way to show only the planner's rows without
+adding one, and adding one would hide every row the main app writes. It is one
+operator and one vehicle, so the honest thing is to show all 21 rows and let
+any of them be corrected.
+
+The consequence to design around: **deleting here deletes shared data.** A
+confirm naming the row (date and description) is not optional.
+
+- **List** — date, description, km, L/100 km, $/L, litres, cost, $/km, and
+  whether the row is linked to appointments. Newest first.
+- **Monthly totals** — distance and cost per month. This is the number that
+  matters at tax time, and it is a `sum()` away.
+- **Edit** — an inline row that becomes fields. Distance, consumption, price,
+  date and description are editable.
+- **Delete** — with the confirm above.
+
+**The derived figures are recomputed server-side on every edit**, never taken
+from the request: `litres = km × consumption ÷ 100`, `trip_cost = litres ×
+price`, `cost_per_km = trip_cost ÷ km`. `api/fuel-log.js` already does this on
+insert; the arithmetic moves into a shared helper so insert and update cannot
+drift apart. That helper is pure, so it gets the unit tests.
+
+A side benefit: the older rows carry values like `46.777499999999996`. Editing
+one rounds it to the 2 dp the insert path already applies, so the data tidies
+itself as it is touched.
+
+### 15. Route history — review, update in place, delete
+
+**Decided with Mark: delete plus update in place.** Reopening a saved run,
+adjusting it and re-planning should update *that* row rather than adding a
+second one. Without this, `route_plans` fills with near-duplicates — which is
+exactly what the fuel table already demonstrates can happen.
+
+- The planner remembers which saved run is open. After re-planning, the save
+  action reads **Update saved run**, with **Save as a new run** alongside it
+  for the case where a variant is genuinely wanted.
+- **Delete**, with a confirm.
+- Listing already exists; the History screen adds the totals and the actions.
+
+### What this needs building
+
+| | |
+| --- | --- |
+| `api/fuel-log.js` | `GET ?history=1` to list; `PUT ?id=` to update; `DELETE ?id=` to remove. Shared `computeFuelRow()` used by insert and update. |
+| `api/plans.js` | `PUT ?id=` to update in place; `DELETE ?id=` to remove. |
+| `src/components/History.jsx` | The view, with `FuelHistory` and `RouteHistory` inside it. |
+| `src/App.jsx` | Hash routing between planner and history; remember the open run id. |
+| `vite.config.js` | **The dev-server shim only parses a body for `POST` and `PUT`.** `PATCH` and `DELETE` bodies are dropped, so either stick to `PUT` or extend the shim. Worth extending it regardless — the silent-drop is a trap for the next endpoint. |
+| `test/` | The fuel arithmetic helper. Extend `test/endpoints.test.js` to check `PUT` and `DELETE` require a session too — it currently only tries `GET` and `POST`, so the new verbs would not be covered by the guard that exists to catch exactly this. |
+| Migration 002 | Optional: `updated_at` on `route_plans`, so an edited run can be told from an untouched one. Additive and low risk. Adding the same to `fuel_cost_calculations` is also additive, but it is not our table — worth asking first. |
+
+### Two things to keep in view
+
+**No audit trail.** An edit overwrites. For a single operator correcting their
+own typos that is proportionate, but it does mean a wrong edit cannot be undone
+from the app.
+
+**The weak RLS on `fuel_cost_calculations` matters more now.** Its policies
+grant `anon` full `SELECT/INSERT/UPDATE/DELETE` with `USING (true)`. This work
+does not change that, and the planner reaches the table through the
+service-role key either way — but putting a delete button in front of a table
+anyone with the anon key can already empty is a good moment to fix the policies
+in the hoof-tracker project.
+
+---
+
 ## Suggested order
 
 | | Item | Why here | Status |
@@ -417,8 +516,9 @@ offline is enough — no offline planning.
 | — | Day-shape guards (2.8) | Would have fired on none of 50 run days | dropped |
 | — | Plan-versus-actual (2.9) | `actual_duration` is a copy of the estimate, not a measurement | dropped |
 | 8 | CI (3.10) | `npm test` is the whole gate and nothing ran it | **done** |
-| 9 | Offline / PWA (3.11) | It is a field tool in patchy coverage | next |
-| 10 | Finish somewhere other than base | Survived the day-shape cull; small | next |
+| 9 | History view (4.13–15) | Two records accumulating, neither reviewable or correctable | **planned, next** |
+| 10 | Offline / PWA (3.11) | It is a field tool in patchy coverage | next |
+| 11 | Finish somewhere other than base | Survived the day-shape cull; small | next |
 
 ## Open questions for Mark
 
@@ -432,3 +532,10 @@ offline is enough — no offline planning.
 4. **Fuel defaults** — carrying L/100 km and $/L forward from the last logged
    run is what got built. Still worth knowing if you would rather they were
    settings.
+5. **`updated_at` on `fuel_cost_calculations`** — adding it would let an edited
+   row be told from an original. Additive and safe, but that table belongs to
+   the main app, so it is a question rather than an assumption.
+6. **Manual fuel entries** — should the History screen let a run be added by
+   hand, for a day that was driven but never planned? Not in the plan above;
+   easy to add if the 15 hand-entered rows represent an ongoing habit rather
+   than history.
