@@ -4,7 +4,14 @@ import { useState } from 'react';
  * The ordered stop list: drag to reorder, with up/down buttons as the
  * keyboard- and touch-friendly equivalent.
  */
-export default function StopList({ stops, locationsById, onReorder, onRemove, onMinutesChange }) {
+export default function StopList({
+  stops,
+  locationsById,
+  onReorder,
+  onRemove,
+  onMinutesChange,
+  onScheduledTimeChange,
+}) {
   const [draggingIndex, setDraggingIndex] = useState(null);
   const [overIndex, setOverIndex] = useState(null);
 
@@ -70,6 +77,17 @@ export default function StopList({ stops, locationsById, onReorder, onRemove, on
                 onChange={(e) => onMinutesChange(index, e.target.value)}
               />
               <span className="muted small">min</span>
+            </label>
+
+            {/* Blank means "no booked time" — the stop then just chains off the
+                one before it, which is how the whole list used to behave. */}
+            <label className="stop-booked">
+              <span className="muted small">Booked</span>
+              <input
+                type="time"
+                value={stop.scheduledTime || ''}
+                onChange={(e) => onScheduledTimeChange(index, e.target.value)}
+              />
             </label>
 
             <div className="stop-actions">

@@ -34,8 +34,8 @@ There is no linter and no CI workflow. `npm test` is the whole gate.
 Three layers, and the boundary between them is a security boundary:
 
 - **`api/*.js`** — Vercel serverless functions. The *only* code that sees a key.
-  Four endpoints: `locations` (GET), `appointments` (GET), `plan` (POST),
-  `staticmap` (POST).
+  Five endpoints: `locations` (GET), `appointments` (GET), `plan` (POST),
+  `staticmap` (POST), `config` (GET).
 - **`lib/*.js`** — server-side modules. **Never import these from `src/`.**
   `google.js` holds the Maps key, `supabase.js` holds the service-role key.
 - **`src/`** — the React app. Talks to `/api/*` through `src/lib/api.js` and
@@ -43,7 +43,33 @@ Three layers, and the boundary between them is a security boundary:
   nothing reaches the browser bundle.
 
 `src/lib/` (client) and `lib/` (server) are different directories with similar
-names. Check which one you are editing.
+names. Check which one you are editing. `lib/auth.js` (verifies tokens) and
+`src/lib/auth.js` (runs the sign-in) are the pair most easily confused.
+
+### Authentication
+
+Every endpoint that reads practice data or spends the Maps key is behind a
+verified Supabase session. A handler's first two lines are:
+
+```js
+const user = await authenticate(req, res);
+if (!user) return undefined;   // authenticate() has already sent the 401
+```
+
+and `user.id` is then passed to `scopeToUser(query, userId)`. That scoping is
+mandatory — `scopeToUser` throws without an id, so there is no unscoped path to
+fall into. The old `THC_USER_ID` env var is gone: scoping is enforced by the
+server, not configured by a deployment.
+
+**`GET /api/config` is the one deliberately public endpoint.** It serves the
+Supabase URL and anon key so the browser can sign in at all. That pair is
+publishable by design — RLS protects the data — but nothing else may be added
+to that response. It exists instead of a `VITE_SUPABASE_ANON_KEY` build
+variable so every value in this project is set in one server-side place; if you
+are tempted to "simplify" it into a `VITE_` variable, that is the reason not to.
+
+Tokens are verified by calling Supabase rather than decoding the JWT locally,
+which costs a round trip but survives a JWT secret rotation.
 
 ### The scheduling model
 
@@ -54,12 +80,19 @@ scheduling rules are fully unit-tested against stubbed legs.
 The day is anchored on the **first appointment time**, not a leave time:
 
 ```
-leaveBase      = firstAppointment − drive(base → stop 1)
-arrival[0]     = firstAppointment
+anchor         = stops[0].scheduledTime ?? firstAppointment
+leaveBase      = anchor − drive(base → stop 1)
+arrival[0]     = anchor
 departure[i]   = arrival[i] + timeOnSite[i]
-arrival[i]     = departure[i−1] + drive(stop i−1 → stop i)
+arrival[i]     = max(departure[i−1] + drive(i−1 → i), scheduledTime[i])
 returnToBase   = departure[last] + drive(last stop → base)
 ```
+
+A stop carries `scheduledTime` when the client was booked for a particular
+time. Reaching it early means waiting (`waitSeconds`), so the arrival is held
+back rather than printed early; reaching it late is not something the schedule
+can absorb, so it is reported (`lateSeconds`, and collected into `lateStops`)
+and left visible. A stop without one just chains off the stop before it.
 
 Two consequences worth knowing before you change anything here:
 
@@ -140,18 +173,12 @@ overridden it. "Reset to default" clears the key.
 
 ## Known gaps
 
-`docs/ROADMAP.md` is the prioritised plan. Two items in it are things the app
-gets wrong today, not features:
-
-1. **The `api/*` endpoints have no authentication.** `/api/locations` returns
-   every client's name, address and access notes; `/api/plan` and
-   `/api/staticmap` spend the Maps key. `THC_USER_ID` scopes rows to one
-   operator — it does not authenticate anyone.
-2. **Booked appointment times are discarded for every stop but the first.**
-   `api/appointments.js` returns `earliestTime` per location; `App.jsx` uses it
-   only to set the anchor and then drops it. The itinerary can therefore print
-   an arrival that contradicts what the client was told, with nothing flagging
-   it.
+`docs/ROADMAP.md` is the prioritised plan. Its Tier 0 items — the two things
+the app got *wrong* rather than merely lacked — are both fixed now: the
+endpoints are authenticated, and every stop's booked time is honoured. What is
+left in that document is features, in rough priority order. The next ones are
+navigation deep links, logging a run into `fuel_cost_calculations`, and
+stop-order optimisation.
 
 ## Conventions
 

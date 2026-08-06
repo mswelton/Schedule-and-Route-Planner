@@ -39,7 +39,11 @@ times from history" premature.
 
 ---
 
-## Tier 0 — do these before anything else
+## Tier 0 — done
+
+Both items below are **built**. They are kept here with their original
+reasoning because the reasoning is the record of why the app behaves as it now
+does; the fixes are described at the end of each.
 
 ### 1. The deployed API has no authentication at all
 
@@ -66,12 +70,12 @@ across all 29 tables, `profiles` is 1:1 with `auth.users`). Match it:
   configured.
 - While in there: cap `polylines` and `markers` length in `staticmap.js`.
 
-**Effort:** ~1 day. **Do this first** — every other item adds more surface to
-an endpoint that currently has none.
-
-An interim mitigation, if a full auth pass has to wait: turn on Vercel
-Deployment Protection (password or SSO) for the project. Ten minutes, and it
-closes the exposure until the real fix lands.
+**Done.** The browser signs in with Supabase Auth and sends the access token
+with every request; `lib/auth.js` verifies it and `scopeToUser()` throws
+without a verified id, so no unscoped path remains. `THC_USER_ID` is gone.
+`GET /api/config` is the one deliberately public endpoint — it serves the
+project URL and anon key so sign-in can happen at all. `staticmap.js` now caps
+its polylines and markers.
 
 ### 2. Booked appointment times are silently discarded for every stop but the first
 
@@ -98,12 +102,13 @@ per-stop constraint.
   and mark every downstream stop as knocked on.
 - Show the total slack for the day in the summary strip.
 
-This is the one change that makes the itinerary trustworthy against the
-appointment book rather than a parallel version of it. `lib/schedule.js` is
-pure and fully unit-tested, so it is a well-covered change: new tests for
-wait-inserted, late-arrival, and no-booking-set cases.
-
-**Effort:** ~1 day including tests.
+**Done.** `buildItinerary` takes an optional `scheduledTime` per stop, holds
+the arrival back to it (reporting `waitSeconds`) and reports `lateSeconds` plus
+a top-level `lateStops` when the run cannot make it. The first stop's booked
+time now anchors the day ahead of the typed-in first appointment time. **Load
+from appointments** fills the times in, and each stop has a clearable field.
+Four new cases in `test/schedule.test.js` cover wait, late, anchoring and the
+unchanged no-booking path.
 
 ---
 
@@ -299,24 +304,20 @@ offline is enough — no offline planning.
 
 ## Suggested order
 
-| | Item | Why here |
-| --- | --- | --- |
-| 1 | Auth on the API (Tier 0.1) | Client PII and a billable key are open right now |
-| 2 | Honour booked times (Tier 0.2) | The itinerary can currently contradict the appointment book |
-| 3 | Navigation links (1.3) | An hour's work, used on every stop of every run |
-| 4 | Fuel cost logging (1.4) | Replaces manual entry with a number already computed |
-| 5 | Optimise order (1.5) | Cheap at 3 stops, and the last unbuilt brief item |
-| 6 | Call reduction + cache (1.6) | Makes 3–5 sensible to iterate on |
-| 7 | Persist plans + write-back (2.7) | Needs the schema conversation started early |
-
-Items 3 and 4 are small enough to land in the same PR as 1 if that is more
-convenient than three round trips.
+| | Item | Why here | Status |
+| --- | --- | --- | --- |
+| 1 | Auth on the API (Tier 0.1) | Client PII and a billable key were open | **done** |
+| 2 | Honour booked times (Tier 0.2) | The itinerary could contradict the appointment book | **done** |
+| 3 | Navigation links (1.3) | An hour's work, used on every stop of every run | next |
+| 4 | Fuel cost logging (1.4) | Replaces manual entry with a number already computed | next |
+| 5 | Optimise order (1.5) | Cheap at 3 stops, and the last unbuilt brief item | |
+| 6 | Call reduction + cache (1.6) | Makes 3–5 sensible to iterate on | |
+| 7 | Persist plans + write-back (2.7) | Needs the schema conversation started early | |
 
 ## Open questions for Mark
 
-1. **Auth model** — full Supabase Auth sign-in on this app, or is Vercel
-   password protection enough given it is single-operator? The first is right;
-   the second is ten minutes.
+1. ~~**Auth model.**~~ Answered: full Supabase Auth sign-in, same account as
+   the main hoof-tracker app.
 2. **`route_plans` schema** — worth agreeing the shape before it is written,
    as the README already notes.
 3. **Write-back to `appointments`** — is the planner allowed to change

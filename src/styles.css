@@ -147,7 +147,9 @@ input[type='text'],
 input[type='date'],
 input[type='time'],
 input[type='number'],
-input[type='search'] {
+input[type='search'],
+input[type='email'],
+input[type='password'] {
   font: inherit;
   color: inherit;
   padding: 9px 11px;
@@ -333,6 +335,16 @@ button.link {
   width: 72px;
 }
 
+.stop-booked {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.stop-booked input {
+  width: 110px;
+}
+
 .stop-actions {
   display: flex;
   gap: 4px;
@@ -365,7 +377,8 @@ button.link {
     flex: 1 1 60%;
   }
 
-  .stop-minutes {
+  .stop-minutes,
+  .stop-booked {
     margin-left: 38px;
   }
 
@@ -497,6 +510,22 @@ button.link {
   font-weight: 600;
 }
 
+.booked-for,
+.booked-late {
+  margin-top: 2px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.booked-for {
+  color: var(--charcoal-soft);
+}
+
+/* A missed booking is the one thing on the page worth stopping at. */
+.booked-late {
+  color: #b23c38;
+}
+
 .leg {
   display: flex;
   flex-direction: column;
@@ -599,6 +628,30 @@ code {
 }
 
 /* ---------- print ---------- */
+
+/* ---------- sign in ---------- */
+
+.signin-page {
+  max-width: 460px;
+}
+
+.signin h2 {
+  margin-top: 0;
+}
+
+.signin form {
+  margin-top: 16px;
+}
+
+.signin button.primary {
+  width: 100%;
+  margin-top: 6px;
+}
+
+.sign-out {
+  margin-left: auto;
+  align-self: center;
+}
 
 @media print {
   body {

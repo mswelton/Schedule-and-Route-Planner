@@ -11,7 +11,14 @@
  * exceed what is sane to put in a query string.
  */
 
+import { authenticate } from '../lib/auth.js';
+
 const STATIC_MAPS_ENDPOINT = 'https://maps.googleapis.com/maps/api/staticmap';
+
+// A day's run is base + stops + return. Capping well above that keeps this
+// from being usable as a general-purpose Static Maps proxy on our key.
+const MAX_PATHS = 30;
+const MAX_MARKERS = 30;
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -19,14 +26,20 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
+  const user = await authenticate(req, res);
+  if (!user) return undefined;
+
   const apiKey = process.env.GOOGLE_MAPS_API_KEY;
   if (!apiKey) {
     return res.status(500).json({ error: 'GOOGLE_MAPS_API_KEY is not set on the server.' });
   }
 
   const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body || {};
-  const polylines = Array.isArray(body.polylines) ? body.polylines.filter(Boolean) : [];
-  const markers = Array.isArray(body.markers) ? body.markers : [];
+  const polylines = (Array.isArray(body.polylines) ? body.polylines.filter(Boolean) : []).slice(
+    0,
+    MAX_PATHS
+  );
+  const markers = (Array.isArray(body.markers) ? body.markers : []).slice(0, MAX_MARKERS);
 
   if (!polylines.length && !markers.length) {
     return res.status(400).json({ error: 'Nothing to draw.' });
