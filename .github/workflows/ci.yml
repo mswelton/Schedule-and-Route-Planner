@@ -1,0 +1,40 @@
+name: CI
+
+# npm test is the whole quality gate for this project — there is no linter —
+# so it needs to actually run on every change rather than only when someone
+# remembers.
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # 22 is what this is developed and deployed on. 20 is kept in the
+        # matrix so a Node-22-only API used by accident shows up here rather
+        # than on somebody's older machine.
+        node: ['20', '22']
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - run: npm ci
+
+      - name: Tests
+        run: npm test
+
+      # The suites are pure — no network, no env — but the build is where a
+      # broken import in src/ shows up, and nothing else compiles the app.
+      - name: Build
+        run: npm run build
