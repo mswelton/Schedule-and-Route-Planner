@@ -27,7 +27,8 @@ Pulled from the live project on 2026-08-06:
 | --- | --- |
 | Active service locations | 17, **all** with `latitude`/`longitude` |
 | Appointments | 137 across 50 distinct run days |
-| Average appointments per run day | 2.74 (the busiest recent day is 8) |
+| Average appointments per run day | 2.74 |
+| Stops (distinct locations) per run day | 1 on 25 days, 2 on 13, 3 on 2 — **3 is the busiest ever** |
 | Appointments with `actual_duration_minutes` | 11 of 137 |
 | `fuel_cost_calculations` rows | 20, hand-entered |
 | Routes API calls per plan | `stops + 2` |
@@ -185,8 +186,11 @@ through the service-role key and is unaffected either way.
 ### 5. Optimise stop order — now a small problem, not a TSP
 
 Listed as "not built" in the README on the grounds that it was not needed for
-v1. The data says it is also cheap: 2.74 stops on an average run day, 8 on the
-busiest recent one. That is not a travelling-salesman problem, it is a handful
+v1. The data says it is also cheap: at most **three** stops on any run day in
+the history. (An earlier draft of this document said "2.74 stops on an average
+day, 8 on the busiest" — that was appointments per day, not locations. The
+mistake made the case weaker than it is.) That is not a travelling-salesman
+problem, it is a handful
 of permutations.
 
 **Build:** an **Optimise order** button (off by default, as the brief wanted).
@@ -262,6 +266,10 @@ second of wall clock.
 
 ## Tier 2 — the planner stops being a throwaway page
 
+Persistence is **built**. The other two items were examined against the data
+and **dropped** — the reasoning is under each, and is worth re-reading before
+anyone rebuilds them.
+
 ### 7. Save the plan, and write the times back to `appointments`
 
 Currently a plan lives until the tab closes. The README defers this as needing
@@ -283,20 +291,37 @@ away.
   plan. Explicit, previewed as a diff, never automatic. The existing calendar
   sync then carries the change to Google/Zoho on its own.
 
-**Effort:** ~2 days, plus a schema conversation before writing any of it.
+**Half done, and the other half declined.**
+
+`route_plans` is built: one row per run, totals lifted out as columns for
+listing, the whole `/api/plan` response kept as `jsonb`. Reopening renders the
+stored itinerary with no Routes API calls and puts the day back in the editor,
+so a past run can be adjusted and re-planned rather than only read. The table
+is created by `docs/migrations/001_create_route_plans.sql`, applied by hand;
+`api/plans.js` detects `42P01` and names that file rather than returning an
+opaque 500.
+
+**Write-back to `appointments` was declined by Mark**, and that is the settled
+position rather than a pending item. The planner suggests times; changing a
+time a client has already been given stays a decision made in the main app.
+The columns are all there (`scheduled_time`, `scheduled_end_time`, the calendar
+sync ids) if that is ever revisited — but revisit it with him, not on the
+grounds that it is easy.
 
 ### 8. Day-shape guards
 
 The planner will happily produce a 13-hour day with a 05:10 start and say
 nothing. It has all the information needed to object.
 
-**Build:** configurable working-day bounds and a lunch break; warnings when the
-day exceeds them, when the leave time is before an earliest-start setting, or
-when `returnToBase.nextDay` is true (already computed — currently just a
-chip). Also: an **end somewhere other than base** option for the days that
-finish at a different property.
+**Dropped, on the evidence.** Across all 50 run days in the history the longest
+span between first and last appointment is 7.75 hours, no day reaches 8, and
+exactly one starts before 08:00. Guards calibrated to that would fire on
+nothing; guards loose enough to be safe would be noise. Worth revisiting only
+if the shape of the work changes — a second operator, or days that routinely
+run past dark.
 
-**Effort:** ~half a day.
+The **end somewhere other than base** option is the part of this item still
+worth having, and it is independent of the guards. Small, and unbuilt.
 
 ### 9. Plan versus actual
 
@@ -304,12 +329,18 @@ finish at a different property.
 thin to learn per-location on-site times from today. But that is a reason to
 start recording the comparison, not to skip it.
 
-**Build:** store planned vs actual per stop (falls out of item 7 for free), and
-show a simple accuracy view. Once the sample is real, default `onSiteMinutes`
-per location from its own history instead of the flat 45-minute constant, and
-the estimate improves without anyone tuning it.
+**Dropped — there is no signal to learn from.** Checking properly rather than
+counting rows: on all 11 appointments carrying an `actual_duration_minutes`,
+the actual equals the estimate **exactly** — minimum difference 0, maximum
+difference 0. It is being copied from the estimate, not measured. Defaulting
+`onSiteMinutes` from that history would do nothing but relearn the 45-minute
+constant while looking like it had learned something, which is worse than not
+doing it.
 
-**Effort:** small now, useful later. Sequence it after item 7.
+The prerequisite is real durations being captured, and that belongs to the
+main hoof-tracker app rather than the planner. Once actuals genuinely differ
+from estimates, this item becomes worth building — and `route_plans` already
+stores what the plan predicted, so the comparison has one side of it waiting.
 
 ---
 
@@ -368,16 +399,22 @@ offline is enough — no offline planning.
 | 4 | Fuel cost logging (1.4) | Replaces manual entry with a number already computed | **done** |
 | 5 | Optimise order (1.5) | Cheap at 3 stops, and the last unbuilt brief item | **done** |
 | 6 | Call reduction + cache (1.6) | Makes 5 sensible to iterate on | **done** (cache) |
-| 7 | Persist plans + write-back (2.7) | Needs the schema conversation started early | next |
+| 7 | Persist plans (2.7) | Needed a table, hence the wait | **done** |
+| — | Write-back to `appointments` | Declined — the planner suggests, it does not rebook | closed |
+| — | Day-shape guards (2.8) | Would have fired on none of 50 run days | dropped |
+| — | Plan-versus-actual (2.9) | `actual_duration` is a copy of the estimate, not a measurement | dropped |
+| 8 | CI (3.10) | There is none; `npm test` is the whole gate | next |
+| 9 | Offline / PWA (3.11) | It is a field tool in patchy coverage | next |
 
 ## Open questions for Mark
 
 1. ~~**Auth model.**~~ Answered: full Supabase Auth sign-in, same account as
    the main hoof-tracker app.
-2. **`route_plans` schema** — worth agreeing the shape before it is written,
-   as the README already notes.
-3. **Write-back to `appointments`** — is the planner allowed to change
-   `scheduled_time` on real bookings (with a preview and a confirm), or should
-   it stay strictly read-only against the practice data?
-4. **Fuel defaults** — carry L/100 km and $/L forward from the last logged
-   run, or keep them as settings?
+2. ~~**`route_plans` schema.**~~ Answered: one row per run, totals as columns
+   for listing, the itinerary as `jsonb`. A per-stop child table can be added
+   later if per-stop history ever needs querying in SQL.
+3. ~~**Write-back to `appointments`.**~~ Answered: no. The planner stays
+   read-only against bookings.
+4. **Fuel defaults** — carrying L/100 km and $/L forward from the last logged
+   run is what got built. Still worth knowing if you would rather they were
+   settings.

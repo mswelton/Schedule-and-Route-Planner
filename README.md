@@ -190,6 +190,22 @@ what to build next, in what order, and why. The two items at the top are
 authenticating the API (it is currently open) and honouring each stop's booked
 appointment time rather than only the first one's.
 
+## Saving a run
+
+**Save this run** keeps the itinerary, and saved runs are listed on the left.
+Opening one shows it exactly as it was worked out — no Routes API calls — and
+puts the day back in the editor, so a past run can be adjusted and re-planned
+rather than only read.
+
+This needs one table, `route_plans`, which does not exist until you apply
+[`docs/migrations/001_create_route_plans.sql`](docs/migrations/001_create_route_plans.sql)
+in the Supabase SQL editor. Until then, saving tells you so. It is additive —
+nothing else references it — and its RLS policies are scoped to the owner.
+
+The planner still **never writes to `appointments`**. It suggests times;
+changing a time a client has already been given stays a decision made in the
+main app.
+
 ## Picking the order
 
 With three or more stops and none of them booked for a time, **Try a better
@@ -231,8 +247,8 @@ This is the **only** thing in the app that writes to the practice database.
 
 ## Not built (from the brief's nice-to-haves)
 
-- **Saving a planned route back to Supabase.** Needs a new table in the
-  production database; worth agreeing on the shape first.
+- ~~**Saving a planned route back to Supabase.**~~ Built — see "Saving a run"
+  above. It needed a new table, which is why it waited.
 The map preview and a print view *are* included. Off-by-default stop reordering
 was the other item here; it is built now — see "Picking the order" above.
 

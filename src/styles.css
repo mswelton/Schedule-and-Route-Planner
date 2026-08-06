@@ -629,6 +629,37 @@ code {
 
 /* ---------- print ---------- */
 
+/* ---------- saved runs ---------- */
+
+.saved-runs {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.saved-run {
+  width: 100%;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.saved-run:hover:not(:disabled) {
+  border-color: var(--orange);
+}
+
+.saved-run-date {
+  font-weight: 600;
+}
+
 /* ---------- stop order ---------- */
 
 .optimise,

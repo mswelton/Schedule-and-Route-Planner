@@ -41,6 +41,23 @@ export function planRoute(payload) {
   });
 }
 
+/** Saved runs. `route_plans` is the only table this app owns. */
+export function fetchSavedRuns() {
+  return request('/api/plans');
+}
+
+export function fetchSavedRun(id) {
+  return request(`/api/plans?id=${encodeURIComponent(id)}`);
+}
+
+export function saveRun(plan) {
+  return request('/api/plans', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ plan }),
+  });
+}
+
 /** Compares the current stop order against Google's best; changes nothing. */
 export function optimiseOrder(payload) {
   return request('/api/optimise', {
