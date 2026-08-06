@@ -3,15 +3,38 @@ name: CI
 # npm test is the whole quality gate for this project — there is no linter —
 # so it needs to actually run on every change rather than only when someone
 # remembers.
+#
+# Trigger set deliberately:
+#   push to main   — the merge itself is checked
+#   pull_request   — every commit on a branch under review
+#   workflow_dispatch — run it on demand, which is also the only way to prove
+#                    the workflow works without pushing something
+#
+# `push` is limited to main on purpose. Listening on every branch as well as
+# pull_request would run the whole matrix twice for each commit on a PR.
 on:
   push:
-    branches: ['**']
-  pull_request:
     branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Nothing here writes to the repository, publishes a package or posts a
+# comment, so the token gets read access and nothing else.
+permissions:
+  contents: read
+
+# A second push to the same branch makes the first run irrelevant. Cancel it
+# rather than paying for both. Runs on main are not cancelled, so the history
+# of what passed there stays complete.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   test:
     runs-on: ubuntu-latest
+    # The suite takes seconds. Anything approaching this is hung, not slow.
+    timeout-minutes: 10
 
     strategy:
       fail-fast: false
