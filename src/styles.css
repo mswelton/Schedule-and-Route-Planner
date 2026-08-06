@@ -629,6 +629,62 @@ code {
 
 /* ---------- print ---------- */
 
+/* ---------- navigation links + fuel log ---------- */
+
+.itinerary-actions {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+/* An <a> that has to sit next to a <button> and match it. */
+a.button {
+  display: inline-block;
+  text-decoration: none;
+  line-height: normal;
+}
+
+.navigate {
+  display: flex;
+  gap: 12px;
+  margin-top: 4px;
+  font-size: 13px;
+}
+
+.navigate a {
+  color: var(--orange);
+  font-weight: 600;
+}
+
+.fuel-log {
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.fuel-log h3 {
+  margin-top: 0;
+}
+
+.suffixed {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.suffixed input {
+  width: 100px;
+}
+
+.fuel-estimate {
+  font-size: 15px;
+}
+
+.fuel-estimate strong {
+  font-size: 19px;
+  color: var(--orange);
+}
+
 /* ---------- sign in ---------- */
 
 .signin-page {

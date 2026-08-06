@@ -11,7 +11,11 @@ arrives at and leaves each property, when he is back, with per-leg drive time,
 distance and any routing warnings Google returns.
 
 It reads the practice database (`hoof-tracker` on Supabase, shared with Mark's
-main app) but owns no tables in it. Nothing here writes to practice data.
+main app) and owns no tables in it. It writes in exactly one place:
+`api/fuel-log.js` inserts a row into `fuel_cost_calculations` when Mark logs a
+run. Everything else is read-only, and it should stay that way — if you are
+adding a second write, that is a decision worth raising rather than a pattern
+to follow.
 
 ## Commands
 
@@ -34,8 +38,8 @@ There is no linter and no CI workflow. `npm test` is the whole gate.
 Three layers, and the boundary between them is a security boundary:
 
 - **`api/*.js`** — Vercel serverless functions. The *only* code that sees a key.
-  Five endpoints: `locations` (GET), `appointments` (GET), `plan` (POST),
-  `staticmap` (POST), `config` (GET).
+  Six endpoints: `locations` (GET), `appointments` (GET), `plan` (POST),
+  `staticmap` (POST), `config` (GET), `fuel-log` (GET/POST).
 - **`lib/*.js`** — server-side modules. **Never import these from `src/`.**
   `google.js` holds the Maps key, `supabase.js` holds the service-role key.
 - **`src/`** — the React app. Talks to `/api/*` through `src/lib/api.js` and
@@ -161,6 +165,19 @@ lat/lng, so legs are computed from stored coordinates. The address-string
 fallback in `toWaypoint()` still exists for rows without them, but as of
 August 2026 nothing exercises it.
 
+**`Number(null)` is `0`, and `0` is a finite latitude.** Checking a coordinate
+with `Number.isFinite(Number(row.lat))` therefore turns a *missing* latitude
+into a real place in the Gulf of Guinea rather than falling through to the
+address. `lib/google.js` and `src/lib/navigation.js` each have a `coordinate()`
+helper that rejects `null`/`undefined`/`''` first. Use it for any new
+coordinate check.
+
+**The horse embed names an unobvious constraint.** `appointments.horse_id` is a
+*text* column whose foreign key points at `horses.horse_id`, not at the bigint
+`horses.id`. A PostgREST embed has to say
+`horses!appointments_horse_id_fkey ( name )`, and a SQL join on `horses.id`
+fails outright on the type mismatch.
+
 **Stop coordinates are re-resolved server-side in `api/plan.js`** from the IDs
 the client sends, never trusted from the request body. Keep that property.
 
@@ -173,12 +190,15 @@ overridden it. "Reset to default" clears the key.
 
 ## Known gaps
 
-`docs/ROADMAP.md` is the prioritised plan. Its Tier 0 items — the two things
-the app got *wrong* rather than merely lacked — are both fixed now: the
-endpoints are authenticated, and every stop's booked time is honoured. What is
-left in that document is features, in rough priority order. The next ones are
-navigation deep links, logging a run into `fuel_cost_calculations`, and
-stop-order optimisation.
+`docs/ROADMAP.md` is the prioritised plan and tracks what is built. Tier 0 (the
+two things the app got *wrong*) and the first two Tier 1 items (navigation deep
+links, fuel-cost logging) are done. Next up are stop-order optimisation and
+cutting the `stops + 2` Routes API calls per plan.
+
+One thing outside this repository, flagged there and in the README: the
+`fuel_cost_calculations` policies grant `anon` full read/write/delete
+(`USING (true)`), so RLS is on but not restricting anything. This app writes to
+that table through the service-role key and is unaffected either way.
 
 ## Conventions
 
