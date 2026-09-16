@@ -49,6 +49,7 @@ export default async function handler(req, res) {
       if (existing) {
         existing.onSiteMinutes += minutes;
         existing.appointmentCount += 1;
+        existing.appointmentIds.push(appt.id);
         if (!existing.earliestTime && appt.scheduled_time) {
           existing.earliestTime = appt.scheduled_time;
         }
@@ -57,6 +58,7 @@ export default async function handler(req, res) {
           locationId: appt.service_location_id,
           onSiteMinutes: minutes,
           appointmentCount: 1,
+          appointmentIds: [appt.id],
           earliestTime: appt.scheduled_time || null,
         });
       }

@@ -153,7 +153,17 @@ export default function App() {
     setStops((current) =>
       current.some((s) => s.locationId === locationId)
         ? current
-        : [...current, { locationId, onSiteMinutes: DEFAULT_ON_SITE_MINUTES, scheduledTime: null }]
+        : [
+            ...current,
+            {
+              locationId,
+              onSiteMinutes: DEFAULT_ON_SITE_MINUTES,
+              scheduledTime: null,
+              // Added by hand, not from the day's appointments - nothing to tie
+              // a job-costing job to.
+              appointmentIds: [],
+            },
+          ]
     );
   }, []);
 
@@ -215,6 +225,7 @@ export default function App() {
           locationId: s.locationId,
           onSiteMinutes: s.onSiteMinutes || DEFAULT_ON_SITE_MINUTES,
           scheduledTime: s.earliestTime ? s.earliestTime.slice(0, 5) : null,
+          appointmentIds: s.appointmentIds || [],
         }))
       );
       const earliest = data.stops.find((s) => s.earliestTime)?.earliestTime;
@@ -294,6 +305,7 @@ export default function App() {
           locationId: stop.id,
           onSiteMinutes: stop.onSiteMinutes,
           scheduledTime: stop.bookedForClock || null,
+          appointmentIds: stop.appointmentIds || [],
         }))
       );
       if (saved.base?.address) {
