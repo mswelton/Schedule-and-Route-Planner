@@ -434,6 +434,13 @@ export default function App() {
         saving={saving}
         savedAt={savedAt}
         updating={Boolean(openRunId)}
+        // Only the run actually saved under this id, not one mid-edit: after a
+        // re-plan `openRunId` survives (so Save updates the same row) but
+        // `savedAt` resets to null, meaning the on-screen itinerary no longer
+        // matches what route_plan_stops holds for that id until it is saved
+        // again. Logging fuel against a stale id would link it to stops that
+        // are no longer this run.
+        routePlanId={savedAt ? openRunId : null}
       />
     </div>
   );

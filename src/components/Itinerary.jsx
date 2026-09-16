@@ -45,7 +45,7 @@ function Navigate({ stop }) {
   );
 }
 
-export default function Itinerary({ plan, onSave, saving, savedAt, updating }) {
+export default function Itinerary({ plan, onSave, saving, savedAt, updating, routePlanId }) {
   if (!plan) return null;
 
   const { totals } = plan;
@@ -214,7 +214,7 @@ export default function Itinerary({ plan, onSave, saving, savedAt, updating }) {
       )}
 
       <RouteMap plan={plan} />
-      <FuelLog plan={plan} />
+      <FuelLog plan={plan} routePlanId={routePlanId} />
     </section>
   );
 }
