@@ -12,7 +12,7 @@ import { formatDistance } from '../lib/format.js';
  * The cost is shown whether or not it is saved: knowing a 231 km day burns
  * $47 is useful on its own.
  */
-export default function FuelLog({ plan }) {
+export default function FuelLog({ plan, routePlanId }) {
   const [consumption, setConsumption] = useState('');
   const [price, setPrice] = useState('');
   const [defaultsFrom, setDefaultsFrom] = useState(null);
@@ -64,6 +64,7 @@ export default function FuelLog({ plan }) {
         fuelConsumption: Number(consumption),
         fuelPrice: Number(price),
         locationIds: plan.stops.map((stop) => stop.id),
+        routePlanId: routePlanId || null,
       });
       setSaved(result);
     } catch (err) {
@@ -109,6 +110,10 @@ export default function FuelLog({ plan }) {
 
       {defaultsFrom && (
         <p className="muted small">Prefilled from the run logged on {defaultsFrom}.</p>
+      )}
+
+      {!routePlanId && (
+        <p className="muted small">Save this run first to link its fuel cost to it for job costing.</p>
       )}
 
       {estimate ? (

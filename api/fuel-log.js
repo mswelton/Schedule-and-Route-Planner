@@ -25,8 +25,17 @@
  *     distanceKm:       number,     // from the plan's totals
  *     fuelConsumption:  number,     // litres per 100 km
  *     fuelPrice:        number,     // dollars per litre
- *     locationIds:      string[]    // the run's stops, in visit order
+ *     locationIds:      string[],   // the run's stops, in visit order
+ *     routePlanId:      string?     // the saved run this belongs to, if any
  *   }
+ *
+ * `routePlanId` ties this entry to a specific saved run (`route_plans.id`) for
+ * the Job Costing & Gross Profit module's vehicle/fuel cost split - optional
+ * because a run can be logged without ever being saved. Not checked against
+ * `scopeToUser` before use: a bogus or someone-else's id simply fails the
+ * foreign key constraint on insert (a normal error, not a 403) - acceptable
+ * because this is an optional cross-reference the client itself derived from
+ * its own saved-run state, not a value a caller could use to probe for ids.
  *
  * Body (PUT): the same three figures plus `date` and `description`, all of
  * which a human may have corrected. The derived columns are recomputed from
@@ -47,7 +56,7 @@ const HISTORY_LIMIT = 200;
 
 const ROW_COLUMNS =
   'id, trim_run_date, description, distance_traveled, fuel_consumption, fuel_cost, ' +
-  'litres_consumption, trip_cost, cost_per_km, appointment_ids, created_at';
+  'litres_consumption, trip_cost, cost_per_km, appointment_ids, route_plan_id, created_at';
 
 function badRequest(res, message) {
   return res.status(400).json({ error: message });
@@ -84,7 +93,7 @@ async function handleGet(req, res, supabase) {
 
 async function handlePost(req, res, supabase, userId) {
   const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body || {};
-  const { date, locationIds } = body;
+  const { date, locationIds, routePlanId } = body;
 
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date || '')) {
     return badRequest(res, 'A run date (YYYY-MM-DD) is required.');
@@ -151,6 +160,7 @@ async function handlePost(req, res, supabase, userId) {
       description,
       ...computeFuelFigures(figures),
       appointment_ids: appointmentIds.length ? appointmentIds : null,
+      route_plan_id: typeof routePlanId === 'string' && routePlanId ? routePlanId : null,
     })
     .select(ROW_COLUMNS)
     .single();
