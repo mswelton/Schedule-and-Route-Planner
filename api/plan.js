@@ -6,7 +6,7 @@
  *     date:                 'YYYY-MM-DD',
  *     firstAppointmentTime: 'HH:MM',            // local wall clock
  *     base:                 { name, address, lat, lng },
- *     stops:                [{ locationId, onSiteMinutes, scheduledTime? }]
+ *     stops:                [{ locationId, onSiteMinutes, scheduledTime?, appointmentIds? }]
  *   }
  *
  * `scheduledTime` is the wall-clock time the client was booked for ('HH:MM').
@@ -98,6 +98,7 @@ export default async function handler(req, res) {
         accessNotes: row.access_notes || null,
         onSiteMinutes: Math.max(0, Number(stop.onSiteMinutes) || 0),
         scheduledTime: booked ? zonedToInstant(date, booked, DEFAULT_TIMEZONE) : null,
+        appointmentIds: Array.isArray(stop.appointmentIds) ? stop.appointmentIds : [],
       };
     });
 
