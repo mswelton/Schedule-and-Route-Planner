@@ -37,6 +37,14 @@
  * because this is an optional cross-reference the client itself derived from
  * its own saved-run state, not a value a caller could use to probe for ids.
  *
+ * When the client sends no `routePlanId` (App.jsx only has one to send after
+ * an explicit Save or after reopening a saved run from History - re-planning
+ * an already-saved date from scratch, the natural way to catch up on a missed
+ * day, leaves it null even though a saved run for that date already exists),
+ * this falls back to looking up a `route_plans` row for the same `date` and
+ * links to that instead of leaving the entry permanently unlinked. Best
+ * effort: a lookup failure never blocks the fuel log itself from saving.
+ *
  * Body (PUT): the same three figures plus `date` and `description`, all of
  * which a human may have corrected. The derived columns are recomputed from
  * them rather than accepted.
@@ -60,6 +68,30 @@ const ROW_COLUMNS =
 
 function badRequest(res, message) {
   return res.status(400).json({ error: message });
+}
+
+/**
+ * Resolves the route_plan_id to link this fuel entry to. Trusts a client-
+ * supplied id as-is (the normal path - see the file header for why it isn't
+ * scopeToUser-checked here). Only when the client sent none does this fall
+ * back to the most recently created `route_plans` row for the same date, so
+ * re-planning an already-saved day (rather than reopening it from History)
+ * still links for job costing instead of leaving the entry stranded.
+ */
+export async function resolveRoutePlanId(supabase, userId, date, routePlanId) {
+  if (typeof routePlanId === 'string' && routePlanId) return routePlanId;
+
+  const { data, error } = await scopeToUser(
+    supabase
+      .from('route_plans')
+      .select('id')
+      .eq('run_date', date)
+      .order('created_at', { ascending: false })
+      .limit(1),
+    userId
+  );
+  if (error) return null; // best effort - never block the fuel log over this
+  return data?.[0]?.id ?? null;
 }
 
 async function handleGet(req, res, supabase) {
@@ -153,6 +185,8 @@ async function handlePost(req, res, supabase, userId) {
     })
     .join('; ');
 
+  const resolvedRoutePlanId = await resolveRoutePlanId(supabase, userId, date, routePlanId);
+
   const { data: inserted, error: insertError } = await supabase
     .from('fuel_cost_calculations')
     .insert({
@@ -160,7 +194,7 @@ async function handlePost(req, res, supabase, userId) {
       description,
       ...computeFuelFigures(figures),
       appointment_ids: appointmentIds.length ? appointmentIds : null,
-      route_plan_id: typeof routePlanId === 'string' && routePlanId ? routePlanId : null,
+      route_plan_id: resolvedRoutePlanId,
     })
     .select(ROW_COLUMNS)
     .single();
