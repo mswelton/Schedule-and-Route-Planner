@@ -55,6 +55,57 @@ export function isMissingTable(error) {
   return /relation .*route_plan.*does not exist/i.test(error.message || '');
 }
 
+/**
+ * Merge the authoritative `route_plan_stops.appointment_ids` into a stored
+ * plan's stops, by sequence.
+ *
+ * `plan` JSONB is a snapshot of what the browser was shown; `route_plan_stops`
+ * is the row-per-stop projection the job-costing module reads. They are
+ * written together, but only the table is guaranteed to carry the appointment
+ * links: every run saved before appointment ids existed has no
+ * `appointmentIds` key in its blob at all, while its stop rows are correct.
+ *
+ * That mattered because reopening a run rebuilds the editor from the blob, and
+ * saving writes the stop rows back from it (`writeStopRows` deletes and
+ * re-inserts). Reopening one of those older runs and re-saving therefore wiped
+ * `appointment_ids` that were correct, silently taking the whole run out of
+ * gross-profit reporting. Reading the table back here makes the blob's copy
+ * advisory and the table's copy the truth, for every consumer of this endpoint.
+ *
+ * Merges positionally because `route_plan_stops.sequence` is assigned from the
+ * same `plan.stops[]` index in `stopRows()`. A stop with no matching row keeps
+ * whatever the blob had, rather than being blanked.
+ */
+export function withStoredAppointmentIds(plan, stopRows) {
+  if (!plan || !Array.isArray(plan.stops)) return plan;
+  if (!Array.isArray(stopRows) || stopRows.length === 0) return plan;
+
+  const bySequence = new Map(stopRows.map((row) => [row.sequence, row]));
+
+  return {
+    ...plan,
+    stops: plan.stops.map((stop, i) => {
+      const row = bySequence.get(i);
+      if (!row || !Array.isArray(row.appointment_ids)) return stop;
+      return { ...stop, appointmentIds: row.appointment_ids };
+    }),
+  };
+}
+
+/**
+ * How many appointments a plan's stops are linked to. Zero means the run is
+ * invisible to job costing — no revenue of its own, and no share of the day's
+ * vehicle or fuel cost — which is worth saying out loud at save time rather
+ * than leaving to be noticed in a margin report weeks later.
+ */
+export function countLinkedAppointments(plan) {
+  if (!plan || !Array.isArray(plan.stops)) return 0;
+  return plan.stops.reduce(
+    (total, stop) => total + (Array.isArray(stop.appointmentIds) ? stop.appointmentIds.length : 0),
+    0
+  );
+}
+
 function missingTableResponse(res) {
   return res.status(503).json({
     error:
@@ -154,7 +205,22 @@ async function handleGet(req, res, supabase, userId) {
       throw new Error(error.message);
     }
     if (!data) return res.status(404).json({ error: 'That saved run no longer exists.' });
-    return res.status(200).json(data);
+
+    // The stop rows are the authoritative copy of the appointment links — see
+    // withStoredAppointmentIds. Not scoped to the user, and does not need to
+    // be: `route_plan_stops` has no `user_id` of its own, and the parent row
+    // above was fetched through scopeToUser and 404s when it is not this
+    // operator's, so `data.id` is already proven to be theirs. Same reasoning
+    // writeStopRows relies on. A missing table is not fatal here: the run is
+    // still worth showing, just with whatever the blob remembers.
+    const { data: stopRows, error: stopsError } = await supabase
+      .from('route_plan_stops')
+      .select('sequence, appointment_ids')
+      .eq('route_plan_id', data.id)
+      .order('sequence', { ascending: true });
+    if (stopsError && !isMissingTable(stopsError)) throw new Error(stopsError.message);
+
+    return res.status(200).json({ ...data, plan: withStoredAppointmentIds(data.plan, stopRows) });
   }
 
   const { data, error } = await scopeToUser(
@@ -196,7 +262,7 @@ async function handlePost(req, res, supabase, userId) {
     throw err;
   }
 
-  return res.status(201).json(data);
+  return res.status(201).json({ ...data, linked_appointment_count: countLinkedAppointments(body.plan) });
 }
 
 async function handlePut(req, res, supabase, userId) {
@@ -227,7 +293,7 @@ async function handlePut(req, res, supabase, userId) {
     throw err;
   }
 
-  return res.status(200).json(data);
+  return res.status(200).json({ ...data, linked_appointment_count: countLinkedAppointments(body.plan) });
 }
 
 async function handleDelete(req, res, supabase, userId) {
