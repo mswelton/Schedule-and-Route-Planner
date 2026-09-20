@@ -270,14 +270,26 @@ export default function App() {
       setSaving(true);
       setPlanError(null);
       try {
+        let saved;
         if (openRunId && !asNew) {
-          await updateSavedRun(openRunId, plan);
+          saved = await updateSavedRun(openRunId, plan);
         } else {
-          const created = await saveRun(plan);
-          setOpenRunId(created.id);
+          saved = await saveRun(plan);
+          setOpenRunId(saved.id);
         }
         setSavedAt(Date.now());
         setSavedRunsToken((n) => n + 1);
+        // A run with no appointment links is saved and usable, but it is
+        // invisible to job costing — it takes no share of the day's vehicle or
+        // fuel cost, so every horse on it reports a margin that is too good.
+        // Saving used to be silent about that; the miss only showed up later
+        // in a gross-profit report, if at all.
+        setNotice(
+          saved?.linked_appointment_count === 0
+            ? 'Saved — but no appointments are linked to this run, so it will not be costed. ' +
+              'Use "Load from appointments" to build the day if you want it in the margin figures.'
+            : null
+        );
       } catch (err) {
         setPlanError(err.message);
       } finally {

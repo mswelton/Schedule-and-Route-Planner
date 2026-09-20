@@ -36,7 +36,9 @@ export default function SavedRuns({ refreshToken, onOpen }) {
     setError(null);
     try {
       const saved = await fetchSavedRun(id);
-      onOpen(saved.plan);
+      // The id matters: without it App's `openRunId` stays null and the next
+      // save adds a second row for the same day instead of replacing this one.
+      onOpen(saved.plan, id);
     } catch (err) {
       setError(err.message);
     } finally {
